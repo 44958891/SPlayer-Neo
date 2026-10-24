@@ -11,6 +11,22 @@
 
 ---
 
+## 版本号规则
+
+正式版之间用 beta 累积，攒够一轮改动再提升为下一个正式版：`1.0.0` → `1.1.0-beta.1` → … → `1.1.0-beta.10` → `1.1.0`。
+
+```bash
+pnpm version:beta         # 1.0.0 → 1.1.0-beta.1；beta.1 → beta.2
+pnpm version:beta:patch   # 1.0.0 → 1.0.1-beta.1（纯修 bug 的补丁线）
+pnpm version:promote      # 1.1.0-beta.10 → 1.1.0
+```
+
+脚本只改 `package.json`，更新记录仍需手工补在本文件顶部。
+
+发布时资产要齐全：安装包 + `.blockmap` + 更新描述文件（beta 用 `beta.yml`，正式版用 `latest.yml`）；beta 版本记得在 GitHub Release 上标记为 pre-release。
+
+---
+
 ## 1.0.0（2026-10-24）— SPlayer Neo 首个正式版
 
 从上游 SPlayer-Next 1.2.0-beta.35 分叉，作为「SPlayer Neo」定制发行版的第一个正式版本发布。

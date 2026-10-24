@@ -52,6 +52,27 @@ git merge upstream/dev      # 或 git rebase upstream/dev
 
 冲突高发区：`shared/types/platform.ts`（平台枚举）、`src/services/audioSource.ts`（取链编排）、`src/i18n/locales/*.json`（文案）。
 
+## 版本号规则
+
+正式版之间用 beta 累积，攒够一轮改动后再提升为下一个正式版（例如 `1.1.0-beta.1` … `1.1.0-beta.10` → `1.1.0`）。
+
+```bash
+pnpm version:beta         # 1.0.0 → 1.1.0-beta.1；1.1.0-beta.1 → 1.1.0-beta.2
+pnpm version:beta:patch   # 1.0.0 → 1.0.1-beta.1（只修 bug、不加新功能的补丁线）
+pnpm version:promote      # 1.1.0-beta.10 → 1.1.0（发正式版）
+```
+
+脚本只改 `package.json` 的 `version`，不写 CHANGELOG。发版流程：
+
+1. `pnpm version:beta`（或 `version:promote`）
+2. 在 `CHANGELOG.md` 顶部补一条对应版本的更新记录
+3. `pnpm test && pnpm build:win`
+4. 提交并打 tag（`v<版本号>`），在 GitHub 发布 Release，上传 `SPlayerNeo-<版本>-x64-setup.exe`、同名 `.blockmap`，以及对应的更新描述文件：
+   - beta 版本上传 `beta.yml`
+   - 正式版上传 `latest.yml`
+
+> 更新描述文件与 `.blockmap` 必须一起上传，否则客户端「检查更新」会 404 或校验失败。beta 版本要同时勾选 Release 的「预发布（pre-release）」，否则正式版用户会被提示升级到 beta。
+
 ## 构建
 
 ```bash

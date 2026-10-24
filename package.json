@@ -54,7 +54,10 @@
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
-    "prepare": "husky"
+    "prepare": "husky",
+    "version:beta": "tsx scripts/neo-version.ts beta",
+    "version:beta:patch": "tsx scripts/neo-version.ts beta --patch",
+    "version:promote": "tsx scripts/neo-version.ts promote"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
