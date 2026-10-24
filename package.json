@@ -3,7 +3,7 @@
   "name": "splayer-next",
   "productName": "SPlayer-Next",
   "desktopName": "top.imsyy.splayer_next",
-  "version": "1.2.0-beta.1",
+  "version": "1.2.0-beta.35",
   "description": "Cross-platform desktop music player with rich lyric support and wide audio format compatibility",
   "type": "module",
   "packageManager": "pnpm@11.5.2",
@@ -13,10 +13,10 @@
     "email": "imsyy1024@gmail.com",
     "url": "https://imsyy.top"
   },
-  "homepage": "https://splayer-next.imsyy.top",
+  "homepage": "https://github.com/44958891/SPlayer-Neo",
   "repository": {
     "type": "git",
-    "url": "https://github.com/SPlayer-Dev/SPlayer-Next"
+    "url": "https://github.com/44958891/SPlayer-Neo"
   },
   "bugs": {
     "url": "https://github.com/SPlayer-Dev/SPlayer-Next/issues"
@@ -38,13 +38,14 @@
     "test": "pnpm test:node && pnpm test:web",
     "test:node": "tsx --test \"electron/**/*.test.ts\" \"src/**/*.test.ts\"",
     "test:web": "vitest run --config vitest.config.ts",
+    "test:i18n": "vitest run --config vitest.config.ts src/i18n/locales.spec.ts",
     "test:web:watch": "vitest --config vitest.config.ts",
     "test:native": "cargo test --workspace",
     "test:all": "pnpm test && pnpm test:native",
     "build:native": "tsx scripts/build-native.ts",
     "start": "electron-vite preview",
     "dev": "pnpm build:native --dev && tsx scripts/dev.ts",
-    "build": "rimraf dist && pnpm build:native && pnpm typecheck && electron-vite build",
+    "build": "rimraf dist && pnpm build:native && pnpm typecheck && pnpm test:i18n && electron-vite build",
     "postinstall": "node node_modules/electron/install.js && electron-rebuild -f -w better-sqlite3",
     "build:unpack": "pnpm build && electron-builder --dir --config electron-builder.config.ts",
     "build:win": "pnpm build && tsx scripts/gen-license.ts && electron-builder --config electron-builder.config.ts --win",
@@ -138,5 +139,6 @@
     "*.{json,yaml,yml,md,css,scss}": [
       "prettier --write"
     ]
-  }
+  },
+  "displayName": "SPlayer Neo"
 }

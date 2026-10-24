@@ -13,7 +13,7 @@ export interface Contributor {
 }
 
 /* 仓库标识 */
-const repoSlug = "SPlayer-Dev/SPlayer-Next";
+const repoSlug = "44958891/SPlayer-Neo";
 
 /**
  * 获取仓库贡献者列表

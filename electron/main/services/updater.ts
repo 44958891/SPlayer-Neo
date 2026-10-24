@@ -10,7 +10,7 @@ import type { UpdateEvent, UpdateMeta, UpdateMode, UpdateState } from "@shared/t
 import { UPDATE_CHANNELS, type UpdateChannel } from "@shared/types/settings";
 
 const { autoUpdater } = electronUpdater;
-const RELEASES_URL = "https://github.com/SPlayer-Dev/SPlayer-Next/releases";
+const RELEASES_URL = "https://github.com/44958891/SPlayer-Neo/releases";
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 /** 根据实际安装形式决定能力，解压版和开发环境只允许检查 */
@@ -87,7 +87,7 @@ const applyChannel = (): void => {
   autoUpdater.setFeedURL(
     state.channel === "nightly"
       ? { provider: "generic", url: `${RELEASES_URL}/download/nightly` }
-      : { provider: "github", owner: "SPlayer-Dev", repo: "SPlayer-Next" },
+      : { provider: "github", owner: "44958891", repo: "SPlayer-Neo" },
   );
 };
 

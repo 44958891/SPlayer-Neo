@@ -9,7 +9,7 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     __APP_REPO_URL__: JSON.stringify(pkg.repository.url),
-    __APP_REPO_NAME__: JSON.stringify(pkg.productName),
+    __APP_REPO_NAME__: JSON.stringify(pkg.displayName ?? pkg.productName),
     __APP_AUTHOR__: JSON.stringify(pkg.author.name),
     __APP_HOMEPAGE__: JSON.stringify(pkg.homepage),
     __APP_AUTHOR_URL__: JSON.stringify(pkg.author.url),
@@ -35,6 +35,7 @@ export default defineConfig({
     include: [
       "electron/**/*.spec.ts",
       "src/**/*.spec.ts",
+      "shared/**/*.spec.ts",
       "windows/**/*.spec.ts",
       "docs/**/*.spec.ts",
     ],

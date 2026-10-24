@@ -74,6 +74,28 @@ shared/             Cross-process types and defaults
 
 The application uses [vue-i18n](https://vue-i18n.intlify.dev/). Locale files are stored in `src/i18n/locales/`.
 
+### Required: add every new string to both locale files
+
+`zh-CN.json` and `en-US.json` must contain exactly the same set of keys. When a key is missing, vue-i18n renders the **raw key** in the UI (a dialog title shows up as `library.upgrade.title`), and it only appears once that screen is opened — so the defect ships silently.
+
+`src/i18n/locales.spec.ts` guards against this:
+
+```bash
+pnpm test:i18n   # this guard only
+pnpm test        # full suite, also runs in CI
+```
+
+It does four things:
+
+1. Scans every `t("…")` / `$t("…")` plus `labelKey` / `titleKey` / `descKey` / `placeholderKey` declaration under `src/ windows/ electron/ shared/`;
+2. Fails when a key is missing from the Chinese locale, listing `key ← first reference`;
+3. Fails when a key is missing from the English locale;
+4. Fails when the two key sets differ, and checks that the static prefix of a template-literal key such as ``t(`player.repeatMode.${mode}`)`` resolves to a real namespace.
+
+Workflow for a new screen: write the component → run `pnpm test:i18n` to list the missing keys → add them to both JSON files → run it again.
+
+> Hand-editing JSON blocks easily leaves `,,` or a trailing comma before `}`. Insert keys through a script (read JSON, mutate, write back) or an editor with JSON validation, then run the test immediately.
+
 ### Visual Studio Code
 
 Install [i18n Ally](https://marketplace.visualstudio.com/items?itemName=Lokalise.i18n-ally) and configure:

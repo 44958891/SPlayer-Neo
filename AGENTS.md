@@ -129,6 +129,8 @@ Rust extracts 300x300 JPEG thumbnail to `{userData}/app-data/cache/covers/` duri
 
 Renderer uses `vue-i18n` with `src/i18n/locales/{zh-CN,en-US}.json`. Main process has a lightweight translation table (`electron/main/utils/i18n.ts`) for tray/thumbar; locale synced via `system:setLocale` IPC.
 
+**Every new UI string must be added to BOTH locale files in the same change.** vue-i18n falls back to rendering the raw key (`library.upgrade.title`) when a key is missing, and that only shows up when the dialog is opened — so a missing key ships silently. `src/i18n/locales.spec.ts` enforces this: it scans every `t("…")` / `$t("…")` / `labelKey|titleKey|descKey|placeholderKey` across `src/ windows/ electron/ shared/`, and fails when a key is absent from either locale, when the two locales' key sets differ, or when a template-literal key (`t(\`player.repeatMode.${mode}\`)`) points at a namespace that does not exist. Run it alone with `pnpm test:i18n`; it also runs as part of `pnpm test`. When adding keys, edit the JSON through a script or an editor with JSON validation — hand-inserted blocks easily end up with `,,`or a trailing comma before`}`.
+
 ### Path Aliases
 
 ```

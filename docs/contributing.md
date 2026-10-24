@@ -85,6 +85,28 @@ shared/             跨进程共享的类型与默认配置
 
 本项目使用 [vue-i18n](https://vue-i18n.intlify.dev/) 进行国际化
 
+### 硬性要求：新增文案必须同时补两份语言包
+
+`src/i18n/locales/zh-CN.json` 与 `en-US.json` 的键集合必须完全一致。缺键时 vue-i18n 会把**原始 key 直接渲染到界面上**（例如弹窗标题变成 `library.upgrade.title`），而且只有在打开对应界面时才暴露，很容易带着缺陷发版。
+
+`src/i18n/locales.spec.ts` 会在测试阶段拦截这类问题：
+
+```bash
+pnpm test:i18n   # 只跑这一个守卫
+pnpm test        # 全量测试，CI 也会跑
+```
+
+它做四件事：
+
+1. 扫描 `src/ windows/ electron/ shared/` 中所有 `t("…")`、`$t("…")`，以及 `labelKey` / `titleKey` / `descKey` / `placeholderKey` 声明的键；
+2. 校验每个键在中文语言包里存在（缺一个就失败，并列出 `键 ← 首个引用位置`）；
+3. 校验英文语言包同样存在；
+4. 校验中英键集合一致，并检查模板字符串键（如 ``t(`player.repeatMode.${mode}`)``）的静态前缀是个真实存在的命名空间。
+
+新增界面时按这个顺序做：先写组件 → 跑 `pnpm test:i18n` 看缺哪些键 → 补两份 JSON → 再跑一次确认通过。
+
+> 手工往 JSON 里插条目容易留下 `,,` 或 `}` 前的多余逗号。建议用脚本（读 JSON、改对象、写回）或在带 JSON 校验的编辑器里改，改完立刻跑一次测试。
+
 ### Visual Studio Code 系列
 
 推荐使用 [i18n Ally](https://marketplace.visualstudio.com/items?itemName=Lokalise.i18n-ally) 插件

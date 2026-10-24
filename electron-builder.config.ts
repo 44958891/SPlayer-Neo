@@ -35,7 +35,7 @@ if (updateChannel !== inferredUpdateChannel) {
 const config: Configuration = {
   appId: "top.imsyy.splayer-next",
   productName: "SPlayer-Next",
-  copyright: "Copyright © imsyy 2025",
+  copyright: "Copyright © imsyy 2025 · SPlayer Neo fork (AGPL-3.0)",
   directories: { buildResources: "public" },
   fileAssociations,
   afterPack: "./scripts/after-pack.ts",
@@ -110,9 +110,10 @@ const config: Configuration = {
   win: {
     executableName: "SPlayer-Next",
     icon: "public/icons/logo.ico",
-    artifactName: "${productName}-${version}-${arch}.${ext}",
+    artifactName: "SPlayerNeo-${version}-${arch}.${ext}",
     forceCodeSigning: false,
-    target: ["nsis", "portable"],
+    // 仅构建安装版；portable 已按需求移除
+    target: ["nsis"],
     protocols: [{ name: "Orpheus Protocol", schemes: ["orpheus"] }],
   },
   nsis: {
@@ -120,21 +121,25 @@ const config: Configuration = {
     guid: "top.imsyy.splayer-next",
     installerIcon: "public/icons/favicon.ico",
     uninstallerIcon: "public/icons/favicon.ico",
-    artifactName: "${productName}-${version}-${arch}-setup.${ext}",
+    artifactName: "SPlayerNeo-${version}-${arch}-setup.${ext}",
     shortcutName: "SPlayer Next",
     uninstallDisplayName: "SPlayer Next",
-    createDesktopShortcut: "always",
+    // 桌面快捷方式由自定义安装页（build/installer.nsh）询问；这里保留 FRESH_INSTALL 语义
+    createDesktopShortcut: true,
+    // 安装器只保留中英双语（与应用语言一致；自定义页面的 LangString 也只需这两种）
+    installerLanguages: ["zh_CN", "en_US"],
+    include: "build/installer.nsh",
     allowElevation: true,
     allowToChangeInstallationDirectory: true,
     license: "build/license.txt",
   },
   portable: {
-    artifactName: "${productName}-${version}-${arch}-portable.${ext}",
+    artifactName: "SPlayerNeo-${version}-${arch}-portable.${ext}",
   },
   mac: {
     executableName: "SPlayer-Next",
     icon: "public/icons/icon.icns",
-    artifactName: "${productName}-${version}-${arch}.${ext}",
+    artifactName: "SPlayerNeo-${version}-${arch}.${ext}",
     identity: null,
     hardenedRuntime: false,
     notarize: false,
@@ -153,12 +158,12 @@ const config: Configuration = {
     target: ["dmg", "zip"],
   },
   dmg: {
-    artifactName: "${productName}-${version}-${arch}.${ext}",
+    artifactName: "SPlayerNeo-${version}-${arch}.${ext}",
   },
   linux: {
     executableName: "SPlayer-Next",
     icon: "public/icons/favicon-512x512.png",
-    artifactName: "${name}-${version}-${arch}.${ext}",
+    artifactName: "SPlayerNeo-${version}-${arch}.${ext}",
     maintainer: "imsyy.top",
     category: "Audio;Music;AudioVideo;",
     target: ["AppImage", "deb", "rpm", "tar.gz", "pacman"],
@@ -166,10 +171,10 @@ const config: Configuration = {
     desktop: { entry: { MimeType: "x-scheme-handler/orpheus;" } },
   },
   appImage: {
-    artifactName: "${name}-${version}-${arch}.${ext}",
+    artifactName: "SPlayerNeo-${version}-${arch}.${ext}",
   },
   pacman: {
-    artifactName: "${name}-${version}-${arch}.${ext}",
+    artifactName: "SPlayerNeo-${version}-${arch}.${ext}",
     depends: [
       "gtk3",
       "libnotify",
