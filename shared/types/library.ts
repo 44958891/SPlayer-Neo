@@ -1,6 +1,18 @@
 import type { IpcResponse, Track } from "./player";
 import type { TrackTags, TagEditRequest, TagWriteOutcome } from "./tagEditor";
 
+/** 批量读标签的精简结果（只回"是否缺封面/歌词"判定所需字段） */
+export interface TagBatchEntry {
+  path: string;
+  ok: boolean;
+  /** 是否有内嵌封面 */
+  hasCover?: boolean;
+  /** 内嵌歌词长度（0 表示无歌词） */
+  lyricLength?: number;
+  /** 读取失败原因 */
+  error?: string;
+}
+
 /** 专辑聚合项 */
 export interface AlbumSummary {
   name: string;
@@ -71,6 +83,13 @@ export interface LibraryApi {
   deleteTracks: (paths: string[]) => Promise<IpcResponse<{ deleted: number; failed: number }>>;
   /** 读取本地文件的可编辑标签 */
   readTags: (path: string) => Promise<IpcResponse<TrackTags>>;
+  /**
+   * 批量读取标签（只回"是否缺封面/歌词"判定所需字段）
+   *
+   * 逐首 readTags 的 IPC 往返在几千首规模下不可忽略；读取失败项回 `ok: false`，
+   * 调用方据此跳过而不是误判为"缺"。
+   */
+  readTagsBatch: (paths: string[]) => Promise<IpcResponse<TagBatchEntry[]>>;
   /** 批量写入文件标签 */
   writeTags: (edits: TagEditRequest[]) => Promise<IpcResponse<TagWriteOutcome[]>>;
   /** 弹出文件选择器，选择封面图片（返回路径与预览 dataUrl） */

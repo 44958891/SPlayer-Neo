@@ -31,6 +31,7 @@ import { pluginHost, type PluginHostCallbacks, type PluginLoadSpec } from "./hos
 import { loadScript } from "./loader";
 import { dispatchHostCall } from "./host";
 import { pluginStorageDrop } from "./storage";
+import { healthClear } from "./health";
 import { fetchScript } from "./net";
 
 const pluginsRoot = (): string => pluginsDir;
@@ -371,6 +372,8 @@ class PluginRegistry extends EventEmitter {
 
     // enabled / 用户设置 / 每插件存储均按 id 关联，id 不变即天然保留
     rt.updateInfo = null;
+    // 脚本已换新：清掉该插件旧 hash 的体检结论（新 hash 会另起新键，旧键不再复用）
+    healthClear(id);
     await this.stop(rt);
     rt.manifest = manifest;
     rt.source = source;
@@ -408,6 +411,8 @@ class PluginRegistry extends EventEmitter {
       /* ignore */
     }
     pluginStorageDrop(id);
+    // 同步清除该插件的音源体检记录，避免残留影响后续同 ID 插件
+    healthClear(id);
 
     const enabledMap = { ...(store.get("plugins.enabled") as Record<string, boolean>) };
     delete enabledMap[id];

@@ -56,6 +56,29 @@ export const registerThemeIpc = (): void => {
   });
 
   /**
+   * 保存渲染端降采样后的背景图（JPEG 字节）到 app-cache/backgrounds/<sha1>.jpg
+   * 返回 cache:// URL；失败返回 null
+   */
+  ipcMain.handle(
+    "theme:saveBackgroundImage",
+    async (_event, data: ArrayBuffer): Promise<string | null> => {
+      try {
+        if (!data || data.byteLength === 0) return null;
+        const buffer = Buffer.from(new Uint8Array(data));
+        const hash = createHash("sha1").update(buffer).digest("hex").slice(0, 16);
+        // 不清目录：旧 src 可能仍指向目录内其他文件，只追加新文件
+        await fs.mkdir(getBackgroundsDir(), { recursive: true });
+        const dest = path.join(getBackgroundsDir(), `${hash}.jpg`);
+        await fs.writeFile(dest, buffer);
+        return toCacheUrl(dest) ?? null;
+      } catch (err) {
+        systemLog.error("[theme] saveBackgroundImage failed", err);
+        return null;
+      }
+    },
+  );
+
+  /**
    * 清空所有缓存的背景图
    */
   ipcMain.handle("theme:clearBackgroundImages", async (): Promise<void> => {

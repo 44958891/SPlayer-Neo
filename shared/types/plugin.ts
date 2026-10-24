@@ -6,6 +6,11 @@
 import type { LyricLine } from "./lyrics";
 import type { Track } from "./player";
 import type { CommentTab, MusicCommentItem } from "./comment";
+import type { AudioProbeResult, PluginHealthEntry } from "../utils/audioProbe";
+import type { CheckPointResult, CheckSong } from "../utils/sourceCheck";
+
+/** 音源体检结论（转发共享工具模块的类型，供主/渲染两侧统一引用） */
+export type { AudioProbeResult, PluginHealthEntry, CheckPointResult, CheckSong };
 
 /**
  * 支持的插件动作
@@ -16,13 +21,17 @@ export type PluginAction =
 /**
  * 音质等级
  * 对齐 src/utils/quality.ts 的 QualityLevel（去掉 null），保持宿主与插件一致
+ * - jymaster：超清母带（网易 Master；其他平台按各自最高档回落）
+ * - sky：沉浸环绕声（网易 Sky；其他平台按各自最高档回落）
+ * - jyeffect：高清环绕声（网易 Surround；其他平台按各自最高档回落）
  * - hi-res：高解析度无损（采样率 ≥ 96kHz + 位深 ≥ 24bit）
  * - lossless：无损（flac/ape/wav 等）
  * - hq：有损 ≥ 320kbps
  * - sq：有损 ≥ 192kbps
  * - lq：有损 < 192kbps
  */
-export type PluginQuality = "hi-res" | "lossless" | "hq" | "sq" | "lq";
+export type PluginQuality =
+  "jymaster" | "sky" | "jyeffect" | "hi-res" | "lossless" | "hq" | "sq" | "lq";
 
 /** 插件类型清单：运行时校验与分类的唯一来源，新增类型只改这里 */
 export const PLUGIN_TYPES = ["source", "control"] as const;
@@ -471,6 +480,11 @@ export interface PluginResolveUrlArgs {
   source: string;
   quality?: PluginQuality;
   musicInfo: { songmid: string; [key: string]: unknown };
+  /**
+   * 单次取链超时（毫秒）
+   * 缺省用 ACTION_TIMEOUTS.musicUrl；调用方可在超时后带更长超时重试一次
+   */
+  timeoutMs?: number;
 }
 
 export interface PluginInvokeMenuArgs {
@@ -573,6 +587,36 @@ export interface PluginsApi {
   ) => Promise<{ ok: boolean; plugin?: PluginInfo; error?: string; fallbackUrl?: string }>;
   /** 获取播放 URL */
   resolveUrl: (args: PluginResolveUrlArgs) => Promise<MusicUrlRes>;
+  /**
+   * 探测音频 URL 可用性（1 字节 Range + 体积反推）
+   * 用于下载/升级前拦截试听片段、防盗链页面与无效数据
+   */
+  probeUrl: (args: {
+    url: string;
+    /** 歌曲时长（秒）；0 跳过体积反推 */
+    durationSec?: number;
+  }) => Promise<AudioProbeResult>;
+  /** 查询音源体检登记表；key 缺省返回全部 */
+  health: (key?: string) => Promise<Record<string, PluginHealthEntry>>;
+  /** 写入一条音源体检结论；at 缺省时由主进程补当前时间 */
+  healthReport: (args: {
+    key: string;
+    entry: Omit<PluginHealthEntry, "at"> & { at?: number };
+  }) => Promise<void>;
+  /** 清除体检记录；传 pluginId 只清该插件 */
+  healthClear: (pluginId?: string) => Promise<number>;
+  /**
+   * 手动体检单点：对（插件 × 源 × 档位 × 测试曲）取链 + 探针 + 码率对照
+   * 渲染层负责遍历编排（报进度、可取消），单点执行与落表在主进程
+   */
+  checkSource: (args: {
+    pluginId: string;
+    source: string;
+    quality: PluginQuality;
+    song: CheckSong;
+    /** 是否把结论写入体检表（默认 true） */
+    persist?: boolean;
+  }) => Promise<CheckPointResult>;
   /** 触发某插件的自定义菜单项 */
   invokeMenu: (args: PluginInvokeMenuArgs) => Promise<PluginInvokeMenuResult>;
   /** 经插件兜底匹配歌词：host 先 musicSearch + 时长门槛匹配，再 musicLyric */

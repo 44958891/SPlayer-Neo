@@ -19,8 +19,11 @@ import IconLucideCalendar from "~icons/lucide/calendar";
 import IconLucideUser from "~icons/lucide/user";
 import IconMoreHorizontal from "~icons/lucide/more-horizontal";
 import IconCopy from "~icons/lucide/copy";
+import { sortTracks } from "@/utils/trackSort";
+import { useStatusStore } from "@/stores/status";
 
 const { t } = useI18n();
+const status = useStatusStore();
 const route = useRoute();
 const router = useRouter();
 const { copy } = useCopyText();
@@ -145,7 +148,8 @@ const playbackContext = computed<PlaybackContext | undefined>(() => {
 
 const handlePlayAll = () => {
   if (!collection.value?.tracks.length) return;
-  player.playFrom(collection.value.tracks, 0, playbackContext.value);
+  const ordered = sortTracks(collection.value.tracks, status.sortField, status.sortOrder);
+  player.playFrom(ordered, 0, playbackContext.value);
 };
 
 const searchQuery = ref("");
@@ -418,6 +422,7 @@ onBeforeUnmount(() => {
           :show-album="type !== 'album'"
           :show-size="source === 'local'"
           :source="source"
+          :show-local-badge="source !== 'local' && source !== 'streaming'"
           :collection-type="type"
           :collection-id="id"
           :playback-context="playbackContext"

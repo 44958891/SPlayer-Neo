@@ -15,9 +15,11 @@ export const requestPlatformLyric = async (
   const byId = track.source === platform;
   // QM lyric 接口要数字 songID
   const lookupId = platform === "qqmusic" ? (track.extId ?? track.id) : track.id;
-  const resp = byId
-    ? await window.api.lyrics.matchById(platform, lookupId)
-    : await window.api.lyrics.matchByQuery(platform, track);
+  // 咪咕没有按 id 取歌词的接口（歌词靠搜索结果里的 lyricUrl），只能走 query
+  const resp =
+    byId && platform !== "migu"
+      ? await window.api.lyrics.matchById(platform, lookupId)
+      : await window.api.lyrics.matchByQuery(platform, track);
   return resp.ok && resp.data ? resp.data : null;
 };
 

@@ -203,6 +203,11 @@ const api = {
     // 保存文件到下载目录
     saveFile: (data: ArrayBuffer, defaultName: string) =>
       ipcRenderer.invoke("system:saveFile", data, defaultName),
+    // 解析短链跳转（163cn.tv 等），跟随重定向拿最终地址
+    resolveRedirect: (url: string) => ipcRenderer.invoke("system:resolveRedirect", url),
+    // 打开并读取文本文件（歌单备份导入）
+    openTextFile: (filters?: { name: string; exts: string[] }) =>
+      ipcRenderer.invoke("system:openTextFile", filters),
     // 重启应用
     relaunch: () => ipcRenderer.invoke("system:relaunch"),
     // 测试当前网络代理
@@ -260,6 +265,8 @@ const api = {
     deleteTracks: (paths: string[]) => ipcRenderer.invoke("library:deleteTracks", paths),
     // 读取本地文件的可编辑标签
     readTags: (path: string) => ipcRenderer.invoke("library:readTags", path),
+    // 批量读取标签（只回缺封面/歌词判定所需字段）
+    readTagsBatch: (paths: string[]) => ipcRenderer.invoke("library:readTagsBatch", paths),
     // 批量写入文件标签
     writeTags: (edits: TagEditRequest[]) => ipcRenderer.invoke("library:writeTags", edits),
     // 弹出文件选择器，选择封面图片
@@ -283,6 +290,8 @@ const api = {
     remove: (id: string) => ipcRenderer.invoke("playlist:remove", id),
     addTracks: (id: string, trackIds: string[]) =>
       ipcRenderer.invoke("playlist:addTracks", id, trackIds),
+    addTrackObjects: (id: string, tracks: unknown[]) =>
+      ipcRenderer.invoke("playlist:addTrackObjects", id, tracks),
     removeTracks: (id: string, trackIds: string[]) =>
       ipcRenderer.invoke("playlist:removeTracks", id, trackIds),
     importLegacy: (records: LegacyPlaylistRecord[]) =>
@@ -415,6 +424,17 @@ const api = {
     applyUpdate: (id: string) => ipcRenderer.invoke("plugin:applyUpdate", id),
     // 解析播放 URL
     resolveUrl: (args: PluginResolveUrlArgs) => ipcRenderer.invoke("plugin:resolveUrl", args),
+    // 探测音频 URL 可用性（1 字节 Range + 体积反推）
+    probeUrl: (args: { url: string; durationSec?: number }) =>
+      ipcRenderer.invoke("plugin:probeUrl", args),
+    // 音源体检登记表查询
+    health: (key?: string) => ipcRenderer.invoke("plugin:health", key),
+    // 音源体检登记表写入
+    healthReport: (args: unknown) => ipcRenderer.invoke("plugin:healthReport", args),
+    // 音源体检登记表清理
+    healthClear: (pluginId?: string) => ipcRenderer.invoke("plugin:healthClear", pluginId),
+    // 手动体检单点：取链 + 探针 + 码率对照
+    checkSource: (args: unknown) => ipcRenderer.invoke("plugin:checkSource", args),
     // 触发插件自定义菜单项
     invokeMenu: (args: PluginInvokeMenuArgs) => ipcRenderer.invoke("plugin:invokeMenu", args),
     // 经插件兜底匹配歌词
@@ -539,6 +559,9 @@ const api = {
       ipcRenderer.invoke("theme:pickBackgroundImage"),
     // 清空已缓存的背景图
     clearBackgroundImages: (): Promise<void> => ipcRenderer.invoke("theme:clearBackgroundImages"),
+    // 保存渲染端降采样后的背景图（JPEG 字节）
+    saveBackgroundImage: (data: ArrayBuffer): Promise<string | null> =>
+      ipcRenderer.invoke("theme:saveBackgroundImage", new Uint8Array(data)),
   },
   cache: {
     // 各类别占用统计

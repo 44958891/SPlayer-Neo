@@ -8,9 +8,12 @@
  */
 
 import { ipcMain, dialog } from "electron";
-import type { PluginInfo } from "@shared/types/plugin";
+import type { PluginInfo, PluginHealthEntry } from "@shared/types/plugin";
 import { pluginRegistry } from "@main/plugins/registry";
 import { resolveUrl, invokeMenu } from "@main/plugins/router";
+import { probeAudioUrl } from "@main/plugins/probe";
+import { checkSourcePoint, type CheckPointArgs } from "@main/plugins/sourceCheck";
+import { healthSnapshot, healthLookup, healthReport, healthClear } from "@main/plugins/health";
 import { matchLyric, matchCover } from "@main/plugins/metadata";
 import { fetchScript, fetchMarket } from "@main/plugins/net";
 import { broadcast } from "@main/utils/broadcast";
@@ -132,6 +135,55 @@ export const registerPluginIpc = (): void => {
 
   ipcMain.handle("plugin:resolveUrl", async (_evt, args) => {
     return resolveUrl(args);
+  });
+
+  // 音频 URL 探针：下载/升级前拦截试听片段、防盗链页面与无效数据
+  ipcMain.handle("plugin:probeUrl", async (_evt, args?: { url?: string; durationSec?: number }) => {
+    // 入参校验在 probeAudioUrl 内做（畸形 URL 返回结论对象而非抛异常）
+    const durationSec = Number.isFinite(args?.durationSec)
+      ? Math.max(0, Math.round(args!.durationSec!))
+      : 0;
+    return probeAudioUrl(args?.url ?? "", durationSec);
+  });
+
+  // 音源体检登记表：查询（key 缺省返回全部）/ 写入 / 清理
+  ipcMain.handle("plugin:health", (_evt, key?: string) => {
+    if (typeof key === "string" && key !== "") {
+      const entry = healthLookup(key);
+      return entry ? { [key]: entry } : {};
+    }
+    return healthSnapshot();
+  });
+  ipcMain.handle(
+    "plugin:healthReport",
+    (_evt, args?: { key?: string; entry?: Omit<PluginHealthEntry, "at"> & { at?: number } }) => {
+      if (!args || typeof args.key !== "string" || args.key === "") return;
+      if (!args.entry || typeof args.entry !== "object") return;
+      healthReport(args.key, { ...args.entry, at: args.entry.at ?? Date.now() });
+    },
+  );
+  ipcMain.handle("plugin:healthClear", (_evt, pluginId?: string) =>
+    healthClear(typeof pluginId === "string" && pluginId !== "" ? pluginId : undefined),
+  );
+
+  // 手动体检单点：取链 + 探针 + 码率对照 + 落表（渲染层编排遍历，便于报进度/取消）
+  ipcMain.handle("plugin:checkSource", async (_evt, args: CheckPointArgs) => {
+    try {
+      return await checkSourcePoint(args);
+    } catch (err) {
+      coreLog.warn("[plugin] checkSource failed:", err);
+      return {
+        pluginId: args?.pluginId ?? "",
+        source: args?.source ?? "",
+        quality: args?.quality ?? "lossless",
+        status: "hard" as const,
+        message: err instanceof Error ? err.message : String(err),
+        sizeBytes: 0,
+        probedBps: 0,
+        linkMs: 0,
+        probeMs: 0,
+      };
+    }
   });
 
   ipcMain.handle("plugin:invokeMenu", async (_evt, args) => {

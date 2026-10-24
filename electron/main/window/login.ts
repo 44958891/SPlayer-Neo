@@ -148,3 +148,49 @@ const NETEASE_CONFIG: LoginPlatformConfig = {
 export const openNeteaseLoginWindow = async (): Promise<Record<string, string> | null> => {
   return await openLoginWindow(NETEASE_CONFIG);
 };
+
+/**
+ * 酷我关心的 cookie：登录成功后由站点写入
+ * userid 为数字表示已登录；其余用于昵称/头像/会话（sid/token 供接口鉴权）
+ */
+const KUWO_COOKIE_KEYS = [
+  "userid",
+  "sid",
+  "token",
+  "websid",
+  "t3",
+  "t3kwid",
+  "uname3",
+  "username",
+  "pic3",
+  "logintype",
+  "kw_token",
+];
+
+/** 酷我音乐登录配置（官方登录弹层由 ?login=open 打开） */
+const KUWO_CONFIG: LoginPlatformConfig = {
+  title: "登录酷我音乐",
+  url: "https://www.kuwo.cn/?login=open",
+  partition: "persist:kuwo-login",
+  logTag: "[login:kuwo]",
+  collectCookies: async (ses) => {
+    const all = await ses.cookies.get({ url: "https://www.kuwo.cn" });
+    const userId = all.find((c) => c.name === "userid");
+    // userid 非 0 视为登录成功（未登录时站点可能写 userid=0）
+    if (!userId?.value || userId.value === "0") return null;
+    const out: Record<string, string> = {};
+    for (const key of KUWO_COOKIE_KEYS) {
+      const hit = all.find((c) => c.name === key);
+      if (hit?.value) out[key] = hit.value;
+    }
+    return out;
+  },
+};
+
+/**
+ * 打开酷我网页登录窗口
+ * @returns 登录成功返回 cookies 对象；用户关闭窗口返回 null
+ */
+export const openKuwoLoginWindow = async (): Promise<Record<string, string> | null> => {
+  return await openLoginWindow(KUWO_CONFIG);
+};

@@ -44,9 +44,8 @@ export const useThemeStore = defineStore(
     /** 系统暗色偏好 */
     const systemDark = usePreferredDark();
 
-    /** 当前是否为暗色 */
+    /** 当前是否为暗色（图片背景不再强制暗色，主题模式始终生效） */
     const isDark = computed(() => {
-      if (effectiveStyle.value === "image") return true;
       if (mode.value === "dark") return true;
       if (mode.value === "light") return false;
       return systemDark.value;
@@ -109,19 +108,59 @@ export const useThemeStore = defineStore(
       imageBackgroundColor.value = src ? await extractColorFromImageUrl(src) : null;
     };
 
+    /** 背景图宽度上限：超过则降采样，避免巨图拖垮合成 */
+    const MAX_BG_WIDTH = 3200;
+    let downscalingBackground = false;
+
+    /**
+     * 背景图超大时降采样重存（如全景图 16000px 宽），完成后更新 src
+     * gif 动图跳过；失败静默保留原图
+     */
+    const maybeDownscaleBackground = async (src: string): Promise<void> => {
+      if (!src || downscalingBackground || src.endsWith(".gif")) return;
+      downscalingBackground = true;
+      try {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = src;
+        await img.decode();
+        if (img.naturalWidth <= MAX_BG_WIDTH || !img.naturalWidth) return;
+        const width = MAX_BG_WIDTH;
+        const height = Math.max(
+          1,
+          Math.round((img.naturalHeight * MAX_BG_WIDTH) / img.naturalWidth),
+        );
+        const canvas = new OffscreenCanvas(width, height);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, width, height);
+        const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.9 });
+        const newUrl = await window.api.theme.saveBackgroundImage(await blob.arrayBuffer());
+        if (newUrl && newUrl !== src) imageBackground.src = newUrl;
+      } catch (err) {
+        console.warn("[theme] background downscale failed:", err);
+      } finally {
+        downscalingBackground = false;
+      }
+    };
+
     /** 初始化 */
     const init = (): void => {
       if (typeof customColor.value !== "string" || !customColor.value.startsWith("#")) {
         customColor.value = DEFAULT_PRIMARY;
       }
-      // 启动时若已有背景图
-      if (imageBackground.src) void refreshImageColor(imageBackground.src);
+      // 启动时若已有背景图（顺带检查是否需要降采样巨图）
+      if (imageBackground.src) {
+        void refreshImageColor(imageBackground.src);
+        void maybeDownscaleBackground(imageBackground.src);
+      }
       apply();
       // 监听背景图变化
       watch(
         () => imageBackground.src,
         (src) => {
           void refreshImageColor(src);
+          void maybeDownscaleBackground(src);
         },
       );
       // 影响渲染的值变化

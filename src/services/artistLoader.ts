@@ -9,6 +9,7 @@ import { useStreamingStore } from "@/stores/streaming";
 import { fetchArtist } from "@/apis/artist/netease";
 import { fetchQQMusicArtist } from "@/apis/artist/qqmusic";
 import { fetchKugouArtist } from "@/apis/artist/kugou";
+import { fetchKuwoArtist } from "@/apis/artist/kuwo";
 import { albumsToCoverItems } from "@/utils/format/coverItem";
 
 export interface LoadArtistOptions {
@@ -55,6 +56,13 @@ export const loadArtist = async (
     if (!options.signal?.aborted) options.onUpdate(result);
     return;
   }
+  if (source === "kuwo") {
+    const artistId = decodeURIComponent(id);
+    const result = await fetchKuwoArtist(artistId, options.fallbackName ?? artistId);
+    if (!options.signal?.aborted) options.onUpdate(result);
+    return;
+  }
+  // 咪咕没有可用的歌手页接口，落到空态而不是报错
   options.onUpdate(null);
 };
 

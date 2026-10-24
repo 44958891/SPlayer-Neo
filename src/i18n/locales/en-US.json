@@ -18,7 +18,7 @@
     "finish": "Finish",
     "footer": "You can adjust anything skipped here anytime in Settings",
     "welcome": {
-      "title": "Welcome to SPlayer-Next",
+      "title": "Welcome to SPlayer Neo",
       "subtitle": "A modern desktop music player — a few quick steps and you're ready",
       "start": "Get Started",
       "features": {
@@ -49,7 +49,7 @@
     },
     "library": {
       "title": "Local Music Library",
-      "subtitle": "Add folders to scan and SPlayer-Next will index them automatically. You can add more later."
+      "subtitle": "Add folders to scan and SPlayer Neo will index them automatically. You can add more later."
     },
     "streaming": {
       "title": "Streaming Servers",
@@ -71,7 +71,7 @@
     },
     "hotkeys": {
       "title": "Keyboard Shortcuts",
-      "subtitle": "SPlayer-Next ships with complete playback shortcuts you can use whenever you need them.",
+      "subtitle": "SPlayer Neo ships with complete playback shortcuts you can use whenever you need them.",
       "tips": {
         "global": {
           "title": "Global shortcuts",
@@ -520,6 +520,7 @@
   },
   "songList": {
     "title": "Title",
+    "localExists": "In Library",
     "album": "Album",
     "actions": "Actions",
     "size": "Size",
@@ -601,7 +602,31 @@
     "clearList": "Clear All",
     "locateCurrent": "Now Playing",
     "clearConfirmTitle": "Clear Playlist",
-    "clearConfirmContent": "Are you sure you want to clear the entire playlist? This cannot be undone."
+    "clearConfirmContent": "Are you sure you want to clear the entire playlist? This cannot be undone.",
+    "import": {
+      "title": "Import Playlist",
+      "description": "Paste playlist share links, one per line. Supports NetEase (including 163cn.tv short links), QQ Music, Kugou and Kuwo. Imported tracks are stored as online tracks and can be played directly.",
+      "placeholder": "https://music.163.com/playlist?id=123456789\nhttps://y.qq.com/n/ryqq/playlist/7524...\nor paste a playlist ID (platform chosen below)",
+      "fallbackPlatform": "Platform for bare IDs",
+      "start": "Start import",
+      "importing": "Importing...",
+      "menuEntry": "Import playlist",
+      "defaultTitle": "Imported playlist",
+      "errorParse": "Unrecognized link",
+      "errorEmpty": "Playlist is empty or unavailable",
+      "doneLine": "Imported {count} tracks",
+      "toastOk": "Imported {count} playlists",
+      "toastPartial": "Done: {ok} succeeded, {failed} failed",
+      "toastFail": "All imports failed"
+    },
+    "switchSource": {
+      "title": "Switch Source",
+      "placeholder": "Title Artist",
+      "noResult": "No results",
+      "original": "Current",
+      "playing": "Playing",
+      "toast": "Source switched"
+    }
   },
   "liked": {
     "title": "Liked Songs",
@@ -679,6 +704,8 @@
     "resolveFailed": "Cannot download: {title}",
     "alreadyQueued": "Already in the download queue",
     "alreadyDownloaded": "Already downloaded",
+    "alreadyLocal": "A local file already exists: {title}",
+    "upgradeTag": "Upgraded",
     "started": "Added to downloads: {title}",
     "enqueued": "Added {count} to downloads",
     "status": {
@@ -723,7 +750,66 @@
     "foldersDescription": "Songs are automatically synced when added or removed",
     "removeFolder": "Remove Directory",
     "removeFolderConfirm": "Removing this directory will delete its songs from the library!",
-    "nestedHint": "Folder is nested with an existing one; skipped"
+    "nestedHint": "Folder is nested with an existing one; skipped",
+    "upgrade": {
+      "title": "Quality Upgrade",
+      "description": "Scan local tracks below the target level, match higher-quality versions across platforms, and replace the originals after downloading.",
+      "sourceAll": "All platforms",
+      "sourceNetease": "NetEase",
+      "sourceQq": "QQ Music",
+      "sourceKugou": "Kugou",
+      "sourceKuwo": "Kuwo",
+      "sourceMigu": "Migu",
+      "start": "Start scan",
+      "resume": "Resume ({count} left)",
+      "rescan": "Rescan",
+      "stop": "Stop",
+      "hint": "Platforms are queried with pacing and slow down on rate limits. Downloaded files are verified; the original is kept when the target level is not met.",
+      "scanning": "Scanning {scanned}/{total}",
+      "matched": "{count} matched",
+      "unmatched": "{count} unmatched",
+      "failed": "{count} failed",
+      "enqueued": "Added to the download queue - see Downloads for progress",
+      "noMatch": "No match",
+      "none": "No tracks need upgrading",
+      "selectAll": "Select all",
+      "upgradeBtn": "Upgrade selected ({count})",
+      "aborted": "Scan interrupted - you can resume later",
+      "enqueueFailed": "Failed to add to the download queue",
+      "doneToast": "Upgraded {count} tracks",
+      "failedToast": "{count} upgrades failed, original files kept"
+    },
+    "backfill": {
+      "title": "Cover & Lyric Backfill",
+      "description": "Scan local tracks missing embedded covers or lyrics, match online tracks by title, artist and duration, and write them back into the file tags.",
+      "optCover": "Covers",
+      "optLyric": "Lyrics",
+      "start": "Start scan",
+      "again": "Rescan",
+      "stop": "Stop",
+      "hint": "Only missing fields are filled; existing covers and lyrics are never overwritten.",
+      "phaseScan": "Reading local tracks...",
+      "phaseMatch": "Matching: {current}",
+      "phaseWrite": "Writing tags...",
+      "summaryTotal": "{count} total",
+      "summaryWritten": "{count} written",
+      "summaryNone": "{count} unmatched",
+      "summaryFailed": "{count} failed",
+      "tagCover": "Cover",
+      "tagLyric": "Lyric",
+      "noMatch": "No match",
+      "idle": "Click \"Start scan\" to find tracks missing covers or lyrics",
+      "nothingMissing": "Every track already has a cover and lyrics",
+      "selectAll": "Select all",
+      "writeBtn": "Write selected ({count})",
+      "aborted": "Stopped",
+      "emptyLibrary": "The library is empty - scan a local folder first",
+      "readFailed": "Failed to read local tracks",
+      "noneMatched": "Nothing to backfill was matched",
+      "writeFailed": "Write failed",
+      "doneToast": "Backfilled {count} tracks",
+      "failedToast": "{count} backfills failed"
+    }
   },
   "settings": {
     "title": "Settings",
@@ -796,6 +882,7 @@
       "downloadTags": "What to Write",
       "cache": "Cache Management",
       "database": "Database Management",
+      "backup": "Playlist Backup",
       "backupReset": "Backup & Reset",
       "debug": "Debug",
       "preset": "OCD Settings",
@@ -904,7 +991,10 @@
       "sq": "Higher (SQ)",
       "hq": "Extreme (HQ)",
       "lossless": "Lossless",
-      "hi-res": "Hi-Res"
+      "hi-res": "Hi-Res",
+      "jyeffect": "Surround (JYEffect)",
+      "sky": "Spatial Audio (Sky)",
+      "jymaster": "Master"
     },
     "allowTrialPlay": {
       "label": "Allow Trial Playback",
@@ -975,6 +1065,8 @@
       "auto": "Smart",
       "qqmusic": "Prefer QM",
       "kugou": "Prefer KG",
+      "kuwo": "Prefer KW",
+      "migu": "Prefer MG",
       "netease": "Prefer NCM",
       "self": "Follow Self"
     },
@@ -2001,6 +2093,26 @@
         "disabled": "Disabled",
         "unloaded": "Unloaded"
       },
+      "check": {
+        "entry": "Source Health",
+        "title": "Source Health Check",
+        "description": "Resolve and probe every plugin and quality combination to find dead or mismatched sources; results feed automatic avoidance during playback.",
+        "start": "Start check",
+        "again": "Re-check",
+        "stop": "Stop",
+        "clearRecords": "Clear records",
+        "hint": "Each plugin and quality pair is resolved once, so this takes a while. Confirmed failures are remembered and skipped next time.",
+        "idle": "Click \"Start check\" to test source availability",
+        "empty": "No plugins to check - install and enable a source plugin first",
+        "stopped": "Check stopped",
+        "done": "Check finished - {count} entries",
+        "recordsCleared": "Cleared {count} records",
+        "summaryOk": "{count} ok",
+        "summaryMismatch": "{count} mismatched",
+        "summaryHard": "{count} dead",
+        "summarySoft": "{count} timed out",
+        "summaryUnsupported": "{count} unsupported"
+      },
       "sectionSource": "Source Plugins",
       "sectionControl": "Control Plugins",
       "detail": {
@@ -2026,9 +2138,18 @@
         "homepage": "Homepage"
       },
       "grant": {
-        "network": { "label": "Network", "desc": "Can make network requests" },
-        "control": { "label": "Control", "desc": "Can control the player" },
-        "ui": { "label": "Interface", "desc": "Can extend or modify the app interface" }
+        "network": {
+          "label": "Network",
+          "desc": "Can make network requests"
+        },
+        "control": {
+          "label": "Control",
+          "desc": "Can control the player"
+        },
+        "ui": {
+          "label": "Interface",
+          "desc": "Can extend or modify the app interface"
+        }
       }
     },
     "pluginManager": {
@@ -2053,6 +2174,20 @@
     "dbCacheManager": {
       "label": "Database Manager",
       "description": "Inspect database usage and clear it"
+    },
+    "playlistBackup": {
+      "label": "Playlist Backup",
+      "description": "Back up all local playlists to JSON (including online track snapshots) and restore them later; or export a single playlist as an m3u8 file.",
+      "emptyPlaylists": "No playlists to export",
+      "invalidFile": "The file is not a valid playlist backup",
+      "exportJson": "Export all playlists",
+      "importJson": "Import backup",
+      "exportM3u": "Export m3u8",
+      "pickPlaylist": "Playlist to export",
+      "exported": "Saved to {path}",
+      "m3uExportedSkipped": "Saved to {path} ({skipped} online tracks written as placeholder comments)",
+      "imported": "imported",
+      "importedSummary": "Imported {playlists} playlists with {tracks} tracks"
     },
     "cacheDir": {
       "label": "Cache Directory",
@@ -2129,6 +2264,14 @@
       "rename": "Keep both (add number)",
       "overwrite": "Overwrite",
       "skip": "Skip"
+    },
+    "downloadSkipExisting": {
+      "label": "Skip existing local songs",
+      "description": "Skip downloading when an audio file with the same name already exists"
+    },
+    "downloadConcurrency": {
+      "label": "Concurrent downloads",
+      "description": "Number of simultaneous downloads; keep at 1 on slow networks"
     },
     "downloadEmbedCover": {
       "label": "Embed Cover",
@@ -2300,6 +2443,9 @@
     "TAG_WRITE_FAILED": "Failed to write tags",
     "MAX_CONSECUTIVE_FAILURES": "Too many consecutive playback failures",
     "UNKNOWN": "Operation failed"
+  },
+  "song": {
+    "unknownArtist": "Unknown Artist"
   },
   "tagEditor": {
     "title": "Edit Metadata",

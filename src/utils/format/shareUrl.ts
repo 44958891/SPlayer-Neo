@@ -14,6 +14,11 @@ export const getTrackShareUrl = (track: Track | null | undefined): string | null
       return `https://y.qq.com/n/ryqq_v2/songDetail/${track.id}`;
     case "kugou":
       return `https://www.kugou.com/mixsong/${track.id}.html`;
+    case "kuwo":
+      return `https://www.kuwo.cn/play_detail/${track.id}`;
+    case "migu":
+      // 咪咕网页版无稳定的单曲详情路由，暂不提供分享链接
+      return null;
     default:
       return null;
   }
@@ -30,6 +35,8 @@ export const getCollectionShareUrl = (collection: Collection | null | undefined)
       netease: `https://music.163.com/#/album?id=${collection.id}`,
       qqmusic: `https://y.qq.com/n/ryqq_v2/albumDetail/${collection.id}`,
       kugou: `https://www.kugou.com/album/info/${collection.id}/`,
+      kuwo: `https://www.kuwo.cn/album_detail/${collection.id}`,
+      migu: null,
       streaming: null,
       local: null,
     },
@@ -37,6 +44,8 @@ export const getCollectionShareUrl = (collection: Collection | null | undefined)
       netease: `https://music.163.com/#/playlist?id=${collection.id}`,
       qqmusic: `https://y.qq.com/n/ryqq_v2/playlist/${collection.id}`,
       kugou: `https://www.kugou.com/songlist/${collection.id}/`,
+      kuwo: `https://www.kuwo.cn/playlist_detail/${collection.id}`,
+      migu: null,
       streaming: null,
       local: null,
     },
@@ -44,6 +53,8 @@ export const getCollectionShareUrl = (collection: Collection | null | undefined)
       netease: `https://music.163.com/#/djradio?id=${collection.id}`,
       qqmusic: `https://y.qq.com/n/ryqq_v2/player_radio#id=${collection.id}`,
       kugou: `https://www.kugou.com/song/#fm_id=${collection.id}`,
+      kuwo: null,
+      migu: null,
       streaming: null,
       local: null,
     },
@@ -51,6 +62,8 @@ export const getCollectionShareUrl = (collection: Collection | null | undefined)
       netease: null,
       qqmusic: null,
       kugou: null,
+      kuwo: null,
+      migu: null,
       streaming: null,
       local: null,
     },

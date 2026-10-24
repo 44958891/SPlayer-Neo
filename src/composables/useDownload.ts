@@ -10,10 +10,25 @@ interface EnqueueOptions {
   quality?: QualityLevel;
   /** 复用已有任务 id（重试） */
   taskId?: string;
+  /** 音质升级：文件落地目录（原文件所在目录） */
+  targetDir?: string;
+  /** 音质升级：下载成功后删除的原文件路径 */
+  replaceSourcePath?: string;
+  /** 音质升级：替换的显式质量下限（原文件损坏时用） */
+  minLevel?: QualityLevel;
 }
 
-/** 可下载音质档位（展示顺序） */
-const DOWNLOAD_QUALITY_LEVELS: QualityLevel[] = ["hi-res", "lossless", "hq", "sq", "lq"];
+/** 可下载音质档位（展示顺序；环绕声/母带档仅网易官方接口生效） */
+const DOWNLOAD_QUALITY_LEVELS: QualityLevel[] = [
+  "jymaster",
+  "sky",
+  "jyeffect",
+  "hi-res",
+  "lossless",
+  "hq",
+  "sq",
+  "lq",
+];
 
 /**
  * 构建下载音质菜单项
@@ -51,12 +66,15 @@ export const useDownload = () => {
     };
     return {
       taskId: opts.taskId ?? crypto.randomUUID(),
-      track,
+      // 深拷贝为纯对象：IPC 结构化克隆无法处理 Vue 响应式 Proxy（如来自 ref 数组的曲目）
+      track: JSON.parse(JSON.stringify(track)) as Track,
       qualityLevel: level,
       coverUrl: track.coverOriginal ?? track.cover,
       tagOptions,
-      usePlaybackForDownload: download.usePlaybackForDownload,
       lyricFileFormat: download.lyricFileFormat,
+      targetDir: opts.targetDir,
+      replaceSourcePath: opts.replaceSourcePath,
+      minLevel: opts.minLevel,
     };
   };
 
@@ -72,7 +90,11 @@ export const useDownload = () => {
       : await window.api.download.start(req);
     if (!res.ok) {
       toast.warning(
-        res.reason === "downloaded" ? t("download.alreadyDownloaded") : t("download.alreadyQueued"),
+        res.reason === "downloaded"
+          ? t("download.alreadyDownloaded")
+          : res.reason === "existsLocal"
+            ? t("download.alreadyLocal", { title: track.title })
+            : t("download.alreadyQueued"),
       );
       return false;
     }
@@ -90,9 +112,15 @@ export const useDownload = () => {
     if (count > 0) toast.success(t("download.enqueued", { count }));
   };
 
-  /** 重试：用任务保存的完整 Track 重新入队（复用 taskId） */
+  /** 重试：用任务保存的完整 Track 重新入队（复用 taskId，升级任务保留落地目录与替换目标） */
   const retry = (task: DownloadTask): Promise<boolean> =>
-    enqueue(task.track, { quality: task.qualityLevel, taskId: task.taskId });
+    enqueue(task.track, {
+      quality: task.qualityLevel,
+      taskId: task.taskId,
+      targetDir: task.targetDir,
+      replaceSourcePath: task.replaceSourcePath,
+      minLevel: task.minLevel,
+    });
 
   return { enqueue, enqueueMany, retry };
 };

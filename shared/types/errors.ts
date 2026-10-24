@@ -31,6 +31,8 @@ export enum ErrorCode {
   // 在线源相关
   /** 无法获取播放地址（API + 插件都失败） */
   URL_RESOLVE_FAILED = "URL_RESOLVE_FAILED",
+  /** 取链成功但预探针判定为试听片段 / 防盗链页面 / 无效内容，已拒绝使用 */
+  SOURCE_PROBE_REJECTED = "SOURCE_PROBE_REJECTED",
   /** 未找到支持该平台的插件 */
   NO_PLUGIN_AVAILABLE = "NO_PLUGIN_AVAILABLE",
   /** 在线平台登录态已失效 */
@@ -41,6 +43,12 @@ export enum ErrorCode {
   NETEASE_TRIAL_DISABLED = "NETEASE_TRIAL_DISABLED",
   /** 在线歌曲暂无可用官方音源 */
   NETEASE_UNAVAILABLE = "NETEASE_UNAVAILABLE",
+
+  // 下载相关
+  /** 下载内容无效（音源返回加密或损坏数据），已保留原文件 */
+  DOWNLOAD_INVALID_FILE = "DOWNLOAD_INVALID_FILE",
+  /** 下载实际音质低于目标档位，已保留原文件 */
+  DOWNLOAD_QUALITY_NOT_MET = "DOWNLOAD_QUALITY_NOT_MET",
 
   // 标签编辑相关
   /** 读取文件标签失败 */

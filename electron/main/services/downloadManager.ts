@@ -17,9 +17,11 @@ import { downloadLog } from "@main/utils/logger";
 import { getEngine } from "@main/services/engine";
 import { fetchBytes } from "@main/utils/fetchBytes";
 import { renderDownloadPath, dedupePath, resolveExtension } from "@main/utils/filename";
+import { levelMeets, levelOfQuality, type QualityLevel } from "@shared/utils/quality";
 import * as db from "@main/database/downloads";
 import { ErrorCode } from "@shared/types/errors";
 import type { JsTagWriteRequest } from "@splayer/audio-engine";
+import type { AudioQuality } from "@shared/types/player";
 import type {
   DownloadRequest,
   DownloadResolvePayload,
@@ -66,8 +68,15 @@ interface Pending {
 const tasks = new Map<string, Pending>();
 /** 等待下载的 taskId，FIFO */
 const queue: string[] = [];
-/** 当前正在下载的 taskId；null 表示空闲 */
-let active: string | null = null;
+/** 正在下载的 taskId 集合（并发下载，上限见 maxConcurrency） */
+const active = new Set<string>();
+
+/** 并发上限；每次 pump 时从设置读取，改设置后下一个任务即生效 */
+const maxConcurrency = (): number => {
+  const raw = Number(store.get("download.concurrency"));
+  if (!Number.isFinite(raw)) return 1;
+  return Math.min(6, Math.max(1, Math.floor(raw)));
+};
 
 /** 渲染层解析结果的等待门 */
 interface ResolutionGate {
@@ -88,6 +97,74 @@ const dedupeKeyOf = (req: DownloadRequest): string =>
 /** 合并艺术家名 */
 const artistString = (req: DownloadRequest): string =>
   req.track.artists.map((artist) => artist.name).join("/");
+
+/** 本地同名检测认可的音频扩展名（含点，小写） */
+const LOCAL_AUDIO_EXTS = new Set([
+  ".flac",
+  ".mp3",
+  ".m4a",
+  ".aac",
+  ".ogg",
+  ".oga",
+  ".opus",
+  ".wav",
+  ".ape",
+  ".wma",
+  ".wv",
+  ".aiff",
+  ".aif",
+  ".alac",
+  ".tta",
+  ".dsf",
+  ".dff",
+  ".mka",
+]);
+
+/**
+ * 读取目录下音频文件的基名集合（小写）
+ * @returns 基名集合；目录不存在或不可读返回 null
+ */
+const audioBaseNames = async (dir: string): Promise<Set<string> | null> => {
+  let entries: fs.Dirent[];
+  try {
+    entries = await fsp.readdir(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const names = new Set<string>();
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const ext = path.extname(entry.name).toLowerCase();
+    if (!LOCAL_AUDIO_EXTS.has(ext)) continue;
+    names.add(entry.name.slice(0, entry.name.length - ext.length).toLowerCase());
+  }
+  return names;
+};
+
+/**
+ * 下载目录是否已有同名音频（任意音频扩展名，大小写不敏感）
+ * @param cache 批量入队时的目录快照缓存（relDir → 基名集合），避免重复扫描
+ */
+const localTrackExists = async (
+  req: DownloadRequest,
+  cache?: Map<string, Set<string> | null>,
+): Promise<boolean> => {
+  const { relDir, baseName } = renderDownloadPath(
+    store.get("download.folderScheme"),
+    store.get("download.fileTemplate"),
+    {
+      artist: artistString(req),
+      title: req.track.title,
+      album: req.track.album?.name ?? "",
+    },
+  );
+  let names = cache?.get(relDir);
+  if (names === undefined) {
+    names = await audioBaseNames(path.join(getDownloadDir(), relDir));
+    cache?.set(relDir, names);
+  }
+  return names?.has(baseName.toLowerCase()) === true;
+};
 
 /** 广播任务状态 */
 const broadcastState = (task: DownloadTask): void => {
@@ -241,6 +318,8 @@ const runTask = async (
   controller: AbortController,
 ): Promise<void> => {
   const partPath = path.join(tmpDir(), `${req.taskId}.part`);
+  /** 已换到临时位、校验中/待落位的候选文件（失败时需清理） */
+  let verifiedPath: string | null = null;
 
   try {
     // 轮到才向渲染层即时解析
@@ -251,7 +330,6 @@ const runTask = async (
         qualityLevel: req.qualityLevel,
         tagOptions: req.tagOptions,
         coverUrl: req.coverUrl,
-        usePlaybackForDownload: req.usePlaybackForDownload,
         lyricFileFormat: req.lyricFileFormat,
       };
       const resolution = waitForResolution(req.taskId, controller.signal);
@@ -261,7 +339,7 @@ const runTask = async (
     const audioUrl = req.url;
     if (!audioUrl) throw new Error("missing download url");
 
-    const downloadDir = getDownloadDir();
+    const downloadDir = req.targetDir ?? getDownloadDir();
     const { relDir, baseName } = renderDownloadPath(
       store.get("download.folderScheme"),
       store.get("download.fileTemplate"),
@@ -271,9 +349,11 @@ const runTask = async (
         album: req.track.album?.name ?? "",
       },
     );
-    const targetDir = path.join(downloadDir, relDir);
+    // 音质升级直接落到原文件所在目录，不套用文件夹分类
+    const targetDir = req.targetDir ? downloadDir : path.join(downloadDir, relDir);
     const finalNoExt = path.join(targetDir, baseName);
-    const policy = store.get("download.overwritePolicy");
+    // 升级任务强制覆盖写：目标位可能正是待替换的原文件
+    const policy = req.replaceSourcePath ? "overwrite" : store.get("download.overwritePolicy");
 
     // skip 策略：用预估扩展名提前命中已存在文件则跳过
     const guessExt = resolveExtension(req.declaredFormat, null, audioUrl);
@@ -307,27 +387,54 @@ const runTask = async (
     if (!(await looksLikeAudio(partPath))) throw new Error("not audio");
 
     const ext = resolveExtension(req.declaredFormat, mime, audioUrl);
+    // 带正确扩展名换到临时位：引擎探测按内容解析，扩展名兜底更稳
+    const partWithExt = path.join(tmpDir(), `${req.taskId}${ext}`);
+    await moveFile(partPath, partWithExt);
+    verifiedPath = partWithExt;
+
+    // 升级任务：替换下限 = 请求显式下限 ?? 原文件探测档位（此刻原文件尚未被动过）
+    const replaceSource =
+      req.replaceSourcePath && fs.existsSync(req.replaceSourcePath) ? req.replaceSourcePath : null;
+    const probedLevel = replaceSource ? await probeFileLevel(replaceSource) : null;
+    const originalLevel = replaceSource ? (req.minLevel ?? probedLevel) : null;
+
+    // 先校验候选文件再落位覆盖：无效数据（音源加密/损坏）必拒；
+    // 升级任务实际档位低于原文件也拒。杜绝"先覆盖再发现是垃圾"导致原文件丢失
+    const quality = await verifyDownloadCandidate(partWithExt, originalLevel);
+    verifiedPath = null;
+
     const finalPath = policy === "rename" ? dedupePath(finalNoExt, ext) : `${finalNoExt}${ext}`;
-    await moveFile(partPath, finalPath);
+    await moveFile(partWithExt, finalPath);
 
     await writeLyricFiles(req, finalPath);
     const tagOk = await applyTags(req, finalPath);
 
+    task.track = { ...task.track, quality };
+    task.probed = true;
     task.status = "done";
     task.received = received;
     task.total = total || received;
     task.filePath = finalPath;
     task.tagWarning = !tagOk;
     task.finishedAt = Date.now();
+    // 音质升级：新文件落定后才删原文件（含同名歌词附档），失败不影响新文件
+    if (replaceSource && replaceSource !== finalPath) {
+      await fsp.unlink(replaceSource).catch((err) => {
+        downloadLog.warn(`升级后删除原文件失败 ${replaceSource}:`, err);
+      });
+      await deleteSourceSidecars(replaceSource);
+    }
     broadcastState(task);
     downloadLog.info(`完成 ${req.track.title} → ${finalPath}`);
   } catch (err) {
     await fsp.unlink(partPath).catch(() => {});
+    if (verifiedPath) await fsp.unlink(verifiedPath).catch(() => {});
     if (controller.signal.aborted) {
       task.status = "canceled";
     } else {
       task.status = "failed";
-      task.errorCode = ErrorCode.UNKNOWN;
+      // 校验类错误带专属错误码（前端据此提示"原文件已保留"）
+      task.errorCode = (err as { errorCode?: ErrorCode }).errorCode ?? ErrorCode.UNKNOWN;
       downloadLog.error(`失败 ${req.track.title}:`, err);
     }
     task.finishedAt = Date.now();
@@ -335,46 +442,139 @@ const runTask = async (
   }
 };
 
-/** 串行处理队列：一次只下一首，下完再取下一个 */
-const pump = async (): Promise<void> => {
-  if (active !== null) return;
-  const taskId = queue.shift();
-  if (taskId === undefined) return;
-  const pending = tasks.get(taskId);
-  if (!pending) return void pump();
-  active = taskId;
-  pending.task.status = "downloading";
-  broadcastState(pending.task);
+/** 引擎探测文件的真实音质；无法解析返回 null */
+const readFileQuality = async (filePath: string): Promise<AudioQuality | null> => {
+  // 空字段写入 = 不修改任何标签，仅借写入后的重新探测拿回真实元数据
+  const [result] = await getEngine().writeTrackTags([{ path: filePath }], getCoverCacheDir());
+  const scanned = result?.track;
+  if (!result?.success || !scanned?.codec || scanned.codec === "unknown") return null;
+  return {
+    codec: scanned.codec,
+    sampleRate: scanned.sampleRate,
+    bitsPerSample: scanned.bitsPerSample,
+    bitRate: scanned.bitRate,
+    channels: scanned.channels,
+  };
+};
+
+/** 探测磁盘上某文件的真实档位；无法解析返回 null */
+const probeFileLevel = async (filePath: string): Promise<QualityLevel | null> => {
   try {
-    await runTask(pending.req, pending.task, pending.controller);
-  } finally {
-    tasks.delete(taskId);
-    active = null;
-    void pump();
+    const quality = await readFileQuality(filePath);
+    return quality ? levelOfQuality(quality) : null;
+  } catch (err) {
+    downloadLog.warn(`探测文件音质失败 ${filePath}:`, err);
+    return null;
+  }
+};
+
+/**
+ * 校验下载候选文件并返回其真实音质
+ * - 解析不出编解码器（音源返回加密/损坏数据）→ DOWNLOAD_INVALID_FILE
+ * - 实际档位低于原文件档位（升级场景）→ DOWNLOAD_QUALITY_NOT_MET
+ * @param originalLevel - 原文件档位；普通下载传 null
+ */
+const verifyDownloadCandidate = async (
+  filePath: string,
+  originalLevel: QualityLevel | null,
+): Promise<AudioQuality> => {
+  const quality = await readFileQuality(filePath);
+  if (!quality) {
+    throw Object.assign(new Error("invalid audio content"), {
+      errorCode: ErrorCode.DOWNLOAD_INVALID_FILE,
+    });
+  }
+  if (originalLevel && !levelMeets(quality, originalLevel)) {
+    throw Object.assign(
+      new Error(`quality below original: ${levelOfQuality(quality)} < ${originalLevel}`),
+      { errorCode: ErrorCode.DOWNLOAD_QUALITY_NOT_MET },
+    );
+  }
+  return quality;
+};
+
+/** 探测已下载文件的真实音质并回填任务（历史任务回填用，不校验档位） */
+const probeTaskQuality = async (task: DownloadTask, filePath: string): Promise<void> => {
+  try {
+    const quality = await readFileQuality(filePath);
+    if (!quality) return;
+    task.track = { ...task.track, quality };
+    task.probed = true;
+  } catch (err) {
+    downloadLog.warn(`探测下载文件音质失败 ${task.track.title}:`, err);
+  }
+};
+
+/** 启动时回填旧下载任务的实际文件音质（每个任务只探一次） */
+const backfillTaskQuality = async (): Promise<void> => {
+  for (const task of db.listAll()) {
+    if (task.status !== "done" || task.probed || !task.filePath) continue;
+    if (
+      !(await fsp
+        .access(task.filePath)
+        .then(() => true)
+        .catch(() => false))
+    )
+      continue;
+    await probeTaskQuality(task, task.filePath);
+    if (task.probed) {
+      db.upsert(task);
+      broadcast("download:state", task);
+    }
+  }
+};
+
+/** 按并发上限持续填充下载槽位；任务完成后自动补位 */
+const pump = (): void => {
+  while (active.size < maxConcurrency()) {
+    const taskId = queue.shift();
+    if (taskId === undefined) return;
+    const pending = tasks.get(taskId);
+    if (!pending) continue;
+    if (active.has(taskId)) continue;
+    active.add(taskId);
+    pending.task.status = "downloading";
+    broadcastState(pending.task);
+    void runTask(pending.req, pending.task, pending.controller)
+      .catch((error) => downloadLog.error("[download] task crashed", taskId, error))
+      .finally(() => {
+        tasks.delete(taskId);
+        active.delete(taskId);
+        pump();
+      });
   }
 };
 
 /** 入队下载（start / retry 共用，按 taskId 覆盖任务行） */
-const enqueueOne = (
+const enqueueOne = async (
   req: DownloadRequest,
   completedByQuality?: Map<string, DownloadTask[]>,
-): EnqueueResult => {
+  localSnapshot?: Map<string, Set<string> | null>,
+): Promise<EnqueueResult> => {
   if (tasks.has(req.taskId)) return { ok: false, reason: "queued" };
   const dedupeKey = dedupeKeyOf(req);
   for (const pending of tasks.values()) {
     if (pending.dedupeKey === dedupeKey) return { ok: false, reason: "queued" };
   }
+  // 音质升级任务不受"已下载过/下载目录同名"拦截：目标位正是原文件，属预期覆盖
+  const isUpgrade = !!req.replaceSourcePath;
   // 已下载过同曲同音质且文件仍在 → 拦下
-  let completed = completedByQuality?.get(req.qualityLevel);
-  if (!completed) {
-    completed = db.listCompletedByQuality(req.qualityLevel);
-    completedByQuality?.set(req.qualityLevel, completed);
-  }
-  const downloaded = completed.find(
-    (task) => task.track.source === req.track.source && task.track.id === req.track.id,
-  );
-  if (downloaded?.filePath && fs.existsSync(downloaded.filePath)) {
-    return { ok: false, reason: "downloaded" };
+  if (!isUpgrade) {
+    let completed = completedByQuality?.get(req.qualityLevel);
+    if (!completed) {
+      completed = db.listCompletedByQuality(req.qualityLevel);
+      completedByQuality?.set(req.qualityLevel, completed);
+    }
+    const downloaded = completed.find(
+      (task) => task.track.source === req.track.source && task.track.id === req.track.id,
+    );
+    if (downloaded?.filePath && fs.existsSync(downloaded.filePath)) {
+      return { ok: false, reason: "downloaded" };
+    }
+    // 下载目录已有同名音频（无论来源）→ 拦下
+    if (store.get("download.skipExistingLocal") && (await localTrackExists(req, localSnapshot))) {
+      return { ok: false, reason: "existsLocal" };
+    }
   }
   const task: DownloadTask = {
     taskId: req.taskId,
@@ -383,6 +583,9 @@ const enqueueOne = (
     qualityLevel: req.qualityLevel,
     received: 0,
     total: req.declaredSize ?? 0,
+    targetDir: req.targetDir,
+    replaceSourcePath: req.replaceSourcePath,
+    minLevel: req.minLevel,
     createdAt: Date.now(),
   };
   tasks.set(req.taskId, { req, task, controller: new AbortController(), dedupeKey });
@@ -392,19 +595,24 @@ const enqueueOne = (
   return { ok: true };
 };
 
-export const enqueue = (req: DownloadRequest): EnqueueResult => enqueueOne(req);
+export const enqueue = (req: DownloadRequest): Promise<EnqueueResult> => enqueueOne(req);
 
-/** 批量入队：同一音质只读取一次已完成历史 */
-export const enqueueMany = (reqs: DownloadRequest[]): EnqueueResult[] => {
+/** 批量入队：同一音质只读取一次已完成历史，同一子目录只扫描一次磁盘 */
+export const enqueueMany = async (reqs: DownloadRequest[]): Promise<EnqueueResult[]> => {
   const completedByQuality = new Map<string, DownloadTask[]>();
-  return reqs.map((req) => enqueueOne(req, completedByQuality));
+  const localSnapshot = new Map<string, Set<string> | null>();
+  const results: EnqueueResult[] = [];
+  for (const req of reqs) {
+    results.push(await enqueueOne(req, completedByQuality, localSnapshot));
+  }
+  return results;
 };
 
 /** 取消任务：进行中则中断，排队中则移出并置为已取消 */
 export const cancel = (taskId: string): void => {
   const pending = tasks.get(taskId);
   if (!pending) return;
-  if (active === taskId) {
+  if (active.has(taskId)) {
     pending.controller.abort();
     return;
   }
@@ -418,6 +626,12 @@ export const cancel = (taskId: string): void => {
 
 /** 下载附带的歌词文件可能的扩展名 */
 const LYRIC_SIDECAR_EXTS = [".lrc", ".qrc", ".yrc", ".krc", ".ttml", ".lys"];
+
+/** 删除原音频文件的同名歌词附档（音质升级替换原文件时清理） */
+const deleteSourceSidecars = async (filePath: string): Promise<void> => {
+  const base = filePath.slice(0, filePath.length - path.extname(filePath).length);
+  await Promise.all(LYRIC_SIDECAR_EXTS.map((ext) => fsp.unlink(`${base}${ext}`).catch(() => {})));
+};
 
 /**
  * 删除已下载的音频文件及同名歌词文件
@@ -437,7 +651,7 @@ export const remove = (taskId: string): void => {
   const pending = tasks.get(taskId);
   if (pending) {
     pending.removed = true;
-    if (active === taskId) {
+    if (active.has(taskId)) {
       // 进行中：中断即可，收尾的 canceled 广播会被 removed 守卫拦掉，行随后由 db.remove 删除
       pending.controller.abort();
     } else {
@@ -460,6 +674,7 @@ export const list = (): DownloadTask[] => db.listAll();
 /** 启动初始化 */
 export const init = async (): Promise<void> => {
   db.markInterrupted();
+  void backfillTaskQuality();
   const dir = tmpDir();
   try {
     const entries = await fsp.readdir(dir);

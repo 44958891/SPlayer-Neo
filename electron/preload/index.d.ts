@@ -62,6 +62,13 @@ declare global {
           data: ArrayBuffer,
           fileName: string,
         ) => Promise<{ success: boolean; path?: string; error?: string }>;
+        resolveRedirect: (
+          url: string,
+        ) => Promise<{ success: boolean; url?: string; error?: string }>;
+        openTextFile: (filters?: {
+          name: string;
+          exts: string[];
+        }) => Promise<{ success: boolean; canceled?: boolean; content?: string; error?: string }>;
         relaunch: () => Promise<void>;
         testNetworkProxy: () => Promise<boolean>;
         onProtocolUrl: (callback: (url: string) => void) => () => void;
@@ -87,6 +94,7 @@ declare global {
       theme: {
         pickBackgroundImage: () => Promise<string | null>;
         clearBackgroundImages: () => Promise<void>;
+        saveBackgroundImage: (data: ArrayBuffer) => Promise<string | null>;
       };
       cache: {
         getStats: () => Promise<{ id: string; kind: "file" | "db"; path: string; size: number }[]>;

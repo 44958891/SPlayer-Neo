@@ -3,7 +3,8 @@ import type { SSelectOption } from "@/components/ui/SSelect.vue";
 import type { QualityLevel } from "@/utils/quality";
 import { useMediaStore } from "@/stores/media";
 import { useSettingsStore } from "@/stores/settings";
-import { getQualityLabel } from "@/utils/quality";
+import { getQualityLevel } from "@/utils/quality";
+import QualityTag from "@/components/ui/QualityTag.vue";
 import * as player from "@/core/player";
 import { isPlatform } from "@shared/types/platform";
 
@@ -16,9 +17,9 @@ const settings = useSettingsStore();
 /** 是否支持切换在线音质 */
 const canSwitchQuality = computed(() => isPlatform(media.track?.source) && !media.track?.cloud);
 
-/** 实际播放音质；详情加载前使用歌曲自身的音质信息。 */
+/** 实际播放音质（按音频流真实信息判定，与本地音乐同款规则）；详情加载前使用歌曲自身的音质信息。 */
 const quality = computed(() => media.detail?.quality ?? media.track?.quality);
-const qualityLabel = computed(() => getQualityLabel(quality.value));
+const displayLevel = computed(() => getQualityLevel(quality.value));
 
 /** 音质偏好下拉选项 */
 const qualityOptions = computed<SSelectOption[]>(() => [
@@ -27,6 +28,9 @@ const qualityOptions = computed<SSelectOption[]>(() => [
   { value: "hq", label: t("settings.songLevel.hq") },
   { value: "lossless", label: t("settings.songLevel.lossless") },
   { value: "hi-res", label: t("settings.songLevel.hi-res") },
+  { value: "jyeffect", label: t("settings.songLevel.jyeffect") },
+  { value: "sky", label: t("settings.songLevel.sky") },
+  { value: "jymaster", label: t("settings.songLevel.jymaster") },
 ]);
 
 const chipBase =
@@ -70,11 +74,11 @@ const onQualityChange = (value: string | number | boolean): void => {
           chipBase,
           'cursor-pointer transition-colors',
           cover
-            ? 'border-cover/30 text-cover/80 hover:border-cover/60'
-            : 'border-on-surface-variant/30 text-on-surface-variant hover:border-on-surface-variant/60',
+            ? 'border-cover/30 hover:border-cover/60'
+            : 'border-on-surface-variant/30 hover:border-on-surface-variant/60',
         ]"
       >
-        {{ qualityLabel }}
+        <QualityTag :level="displayLevel" />
       </span>
     </template>
   </SPopselect>
@@ -84,15 +88,8 @@ const onQualityChange = (value: string | number | boolean): void => {
     :side-offset="16"
     side="top"
   >
-    <span
-      :class="[
-        chipBase,
-        cover
-          ? 'border-cover/25 text-cover/55'
-          : 'border-on-surface-variant/25 text-on-surface-variant/80',
-      ]"
-    >
-      {{ qualityLabel }}
+    <span :class="[chipBase, cover ? 'border-cover/25' : 'border-on-surface-variant/25']">
+      <QualityTag :level="displayLevel" />
     </span>
   </STooltip>
 </template>

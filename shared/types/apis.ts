@@ -3,7 +3,7 @@
  */
 
 /** 支持的音源平台 */
-export type ApiPlatform = "netease" | "qqmusic" | "kugou";
+export type ApiPlatform = "netease" | "qqmusic" | "kugou" | "kuwo" | "migu";
 
 /** 通用响应包装 */
 export type ApiCallResponse =

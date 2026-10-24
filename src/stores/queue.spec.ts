@@ -18,14 +18,11 @@ import {
   insertManyToQueue,
   insertToQueue,
   moveInQueue,
-  originalQueue,
   queue,
   queueEntries,
   removeFromQueue,
   restoreQueue,
   setQueue,
-  shuffleQueue,
-  unshuffleQueue,
   updateQueueItem,
   updateQueueTracks,
 } from "./queue";
@@ -53,42 +50,35 @@ const entry = (id: string, playbackContext?: PlaybackContext): PlaybackQueueItem
 describe("queue", () => {
   beforeEach(() => {
     queueEntries.value = [];
-    originalQueue.value = null;
     storage.getItem.mockReset();
     storage.setItem.mockClear();
   });
 
-  it("替换队列时复制输入并清除洗牌备份", () => {
+  it("替换队列时复制输入", () => {
     const input = [track("a"), track("b")];
-    originalQueue.value = [entry("old")];
 
     setQueue(input);
     input.push(track("c"));
 
     expect(queue.value.map(({ id }) => id)).toEqual(["a", "b"]);
-    expect(originalQueue.value).toBeNull();
-    expect(storage.setItem).toHaveBeenCalledTimes(2);
+    expect(storage.setItem).toHaveBeenCalled();
   });
 
-  it("插入位置会限制在队列边界并同步洗牌备份", () => {
+  it("插入位置会限制在队列边界", () => {
     queueEntries.value = [entry("a"), entry("c")];
-    originalQueue.value = [entry("a"), entry("c")];
 
     insertToQueue(track("b"), 1);
     insertManyToQueue([track("d"), track("e")], 99);
 
     expect(queue.value.map(({ id }) => id)).toEqual(["a", "b", "c", "d", "e"]);
-    expect(originalQueue.value?.map((item) => item.track.id)).toEqual(["a", "c", "b", "d", "e"]);
   });
 
-  it("删除歌曲时按 ID 同步洗牌备份", () => {
+  it("删除歌曲时保持其余顺序不变", () => {
     queueEntries.value = [entry("c"), entry("a"), entry("b")];
-    originalQueue.value = [entry("a"), entry("b"), entry("c")];
 
     removeFromQueue(0);
 
     expect(queue.value.map(({ id }) => id)).toEqual(["a", "b"]);
-    expect(originalQueue.value?.map((item) => item.track.id)).toEqual(["a", "b"]);
   });
 
   it("移动和更新曲目时保持队列身份操作正确", () => {
@@ -103,25 +93,10 @@ describe("queue", () => {
     expect(findTrackIndex("a")).toBe(2);
   });
 
-  it("取消随机播放时恢复原顺序并返回当前歌曲索引", () => {
-    queueEntries.value = [entry("a"), entry("b"), entry("c")];
-    vi.spyOn(Math, "random").mockReturnValue(0);
-
-    shuffleQueue(1);
-
-    expect(queue.value[0].id).toBe("b");
-    expect(originalQueue.value?.map((item) => item.track.id)).toEqual(["a", "b", "c"]);
-    expect(unshuffleQueue("b")).toBe(1);
-    expect(queue.value.map(({ id }) => id)).toEqual(["a", "b", "c"]);
-    expect(originalQueue.value).toBeNull();
-  });
-
-  it("播放上下文跟随队列项插入、移动和随机播放", () => {
+  it("播放上下文跟随队列项插入和移动", () => {
     setQueue([track("a"), track("b")], context);
     insertToQueue(track("c"), 1, { ...context, originId: "789", originType: "album" });
     moveInQueue(1, 2);
-    vi.spyOn(Math, "random").mockReturnValue(0);
-    shuffleQueue(0);
 
     expect(queueEntries.value.find((item) => item.track.id === "a")?.context).toEqual(context);
     expect(queueEntries.value.find((item) => item.track.id === "b")?.context).toEqual(context);
@@ -148,15 +123,12 @@ describe("queue", () => {
     });
   });
 
-  it("从持久化存储恢复队列和随机播放备份", async () => {
-    storage.getItem
-      .mockResolvedValueOnce([track("a"), track("b")])
-      .mockResolvedValueOnce([track("b"), track("a")]);
+  it("从持久化存储恢复队列", async () => {
+    storage.getItem.mockResolvedValueOnce([track("a"), track("b")]);
 
     await restoreQueue();
 
     expect(queue.value.map(({ id }) => id)).toEqual(["a", "b"]);
-    expect(originalQueue.value?.map((item) => item.track.id)).toEqual(["b", "a"]);
   });
 
   it("恢复时将旧 Track 队列包装为队列项", async () => {

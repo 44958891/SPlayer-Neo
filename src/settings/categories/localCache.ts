@@ -2,6 +2,7 @@ import type { SettingCategory } from "@/types/settings-schema";
 import { useSettingsStore } from "@/stores/settings";
 import FileCacheManager from "@/components/settings/custom/FileCacheManager.vue";
 import DbCacheManager from "@/components/settings/custom/DbCacheManager.vue";
+import BackupConfig from "@/components/settings/custom/BackupConfig.vue";
 import IconLucideHardDrive from "~icons/lucide/hard-drive";
 
 const localCacheCategory: SettingCategory = {
@@ -64,6 +65,18 @@ const localCacheCategory: SettingCategory = {
           component: DbCacheManager,
           fullWidth: true,
           keywords: ["dbClearAll.label"],
+        },
+      ],
+    },
+    {
+      id: "backup",
+      items: [
+        {
+          key: "playlistBackup",
+          type: "custom",
+          component: BackupConfig,
+          fullWidth: true,
+          keywords: ["playlistBackup.label"],
         },
       ],
     },

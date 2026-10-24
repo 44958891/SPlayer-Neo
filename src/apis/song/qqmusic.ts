@@ -4,7 +4,8 @@ import type { QualityLevel } from "@/utils/quality";
 import { qqmusicCall } from "@/apis/qqmusic";
 
 export type QQMusicPlayUrlResult =
-  { available: true; url: string; isTrial: boolean } | { available: false; errorCode: ErrorCode };
+  | { available: true; url: string; isTrial: boolean; level?: QualityLevel }
+  | { available: false; errorCode: ErrorCode };
 
 interface SongUrlData {
   id: string;
@@ -13,6 +14,9 @@ interface SongUrlData {
   format?: string;
   isFallback?: boolean;
 }
+
+/** 主进程回传的直链档位（与候选模板一致，可直接当宿主档位使用） */
+const QQ_LEVELS: ReadonlySet<string> = new Set(["hi-res", "lossless", "hq", "sq", "lq"]);
 
 interface SongUrlResponse {
   code: number;
@@ -38,10 +42,13 @@ export const resolveQQMusicUrl = async (
 
     const item = body?.data?.[0];
     if (item?.url) {
+      const level =
+        item.level && QQ_LEVELS.has(item.level) ? (item.level as QualityLevel) : undefined;
       return {
         available: true,
         url: item.url,
         isTrial: false,
+        level,
       };
     }
 

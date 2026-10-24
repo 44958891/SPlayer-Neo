@@ -21,7 +21,7 @@ import type {
 
 /**
  * lx 原生音质枚举 → 宿主 PluginQuality 的映射
- * 兼容 128k/320k/flac/flac24bit 以及各类别名
+ * 兼容 128k/320k/flac/flac24bit 以及各类别名、环绕/母带档（atmos/master）
  */
 const LX_TO_HOST_QUALITY: Record<string, PluginQuality> = {
   "128k": "lq",
@@ -41,9 +41,40 @@ const LX_TO_HOST_QUALITY: Record<string, PluginQuality> = {
   flac24bit: "hi-res",
   hires: "hi-res",
   "hi-res": "hi-res",
+  // 环绕声 / 母带档：lx 生态用 atmos / master 表示，部分脚本直接用宿主档位名
+  atmos: "sky",
+  atmos_plus: "sky",
+  sky: "sky",
+  jyeffect: "jyeffect",
+  surround: "jyeffect",
+  master: "jymaster",
+  jymaster: "jymaster",
 };
 
+/** 宿主档位由低到高的顺序（与 utils/quality 的 QUALITY_ORDER 保持一致） */
+const HOST_QUALITY_ORDER: readonly PluginQuality[] = [
+  "lq",
+  "sq",
+  "hq",
+  "lossless",
+  "hi-res",
+  "jyeffect",
+  "sky",
+  "jymaster",
+];
+
+const HOST_QUALITY_RANK: Record<PluginQuality, number> = Object.fromEntries(
+  HOST_QUALITY_ORDER.map((q, i) => [q, i]),
+) as Record<PluginQuality, number>;
+
+/**
+ * 宿主档位 → 可接受的 lx 音质字符串（按优先级从高到低，含逐级降档）
+ * 仅在该源未声明 qualitys 时作为兜底使用
+ */
 const HOST_TO_LX_QUALITY: Record<PluginQuality, string> = {
+  jymaster: "flac24bit",
+  sky: "flac24bit",
+  jyeffect: "flac24bit",
   lq: "128k",
   sq: "192k",
   hq: "320k",
@@ -51,10 +82,62 @@ const HOST_TO_LX_QUALITY: Record<PluginQuality, string> = {
   "hi-res": "flac24bit",
 };
 
-const mapLxQualityToHost = (q: string): PluginQuality | null =>
+/** 宿主档位 → 候选 lx 音质字符串（优先级从高到低，含降档链） */
+const HOST_TO_LX_CANDIDATES: Record<PluginQuality, readonly string[]> = {
+  jymaster: ["master", "jymaster", "hires", "flac24bit", "flac", "320k", "192k", "128k"],
+  sky: ["sky", "atmos", "atmos_plus", "hires", "flac24bit", "flac", "320k", "192k", "128k"],
+  jyeffect: [
+    "jyeffect",
+    "atmos",
+    "atmos_plus",
+    "hires",
+    "flac24bit",
+    "flac",
+    "320k",
+    "192k",
+    "128k",
+  ],
+  "hi-res": ["flac24bit", "hires", "flac", "320k", "192k", "128k"],
+  lossless: ["flac", "320k", "192k", "128k"],
+  hq: ["320k", "192k", "128k"],
+  sq: ["192k", "128k"],
+  lq: ["128k"],
+};
+
+export const mapLxQualityToHost = (q: string): PluginQuality | null =>
   LX_TO_HOST_QUALITY[String(q).toLowerCase()] ?? null;
 
 const mapHostQualityToLx = (q: PluginQuality): string => HOST_TO_LX_QUALITY[q] ?? "320k";
+
+/**
+ * 把宿主档位翻译成该源真正声明支持的 lx 音质字符串
+ * - 声明列表非空：在候选链里选第一个插件支持的档位；无交集时回落到不高于请求档位的最高声明档
+ * - 声明列表缺失：沿用静态映射，保持对老脚本的兼容
+ * @param requested - 宿主请求档位
+ * @param declared - 该源在 inited 里声明的 lx 音质字符串（小写）
+ * @returns 实际下发给插件的 lx 字符串及其对应的宿主档位
+ */
+export const pickLxQuality = (
+  requested: PluginQuality,
+  declared?: ReadonlySet<string>,
+): { lx: string; host: PluginQuality } => {
+  if (declared && declared.size > 0) {
+    for (const lx of HOST_TO_LX_CANDIDATES[requested]) {
+      if (declared.has(lx)) return { lx, host: mapLxQualityToHost(lx) ?? requested };
+    }
+    const requestedRank = HOST_QUALITY_RANK[requested];
+    let best: { lx: string; host: PluginQuality; rank: number } | null = null;
+    for (const lx of declared) {
+      const host = mapLxQualityToHost(lx);
+      if (!host) continue;
+      const rank = HOST_QUALITY_RANK[host];
+      if (rank <= requestedRank && (!best || rank > best.rank)) best = { lx, host, rank };
+    }
+    if (best) return { lx: best.lx, host: best.host };
+  }
+  const lx = mapHostQualityToLx(requested);
+  return { lx, host: mapLxQualityToHost(lx) ?? requested };
+};
 
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -313,6 +396,8 @@ export const installLxShim = (
   let requestHandler: LxRequestHandler | null = null;
   let inited = false;
   let updateAlerted = false;
+  /** 各源在 inited 里声明的 lx 音质字符串（小写），请求时用于挑选插件真正支持的档位 */
+  const declaredQualitys = new Map<string, Set<string>>();
 
   const lxApi = {
     EVENT_NAMES,
@@ -462,6 +547,7 @@ export const installLxShim = (
             const normalized: Record<string, SourceCapability> = {};
             for (const [key, cap] of Object.entries(rawSources)) {
               const rawQualities = cap.qualitys ?? cap.qualities ?? [];
+              declaredQualitys.set(key, new Set(rawQualities.map((q) => String(q).toLowerCase())));
               const mapped = new Set<PluginQuality>();
               for (const q of rawQualities) {
                 const host = mapLxQualityToHost(q);
@@ -538,19 +624,32 @@ export const installLxShim = (
       }
       const reqObj = req as MusicUrlReq;
       const source = reqObj.source ?? "";
-      // lx 期待 128k/320k/flac/... 音质字符串，宿主的 quality 做一次翻译
+      // lx 期待 128k/320k/flac/... 音质字符串，宿主的 quality 做一次翻译；
+      // 脚本声明了 qualitys 时按声明选它支持的档位（例如母带档翻译成 master 而不是 flac24bit）
       const hostQuality = reqObj.quality;
-      const lxType = hostQuality ? mapHostQualityToLx(hostQuality) : undefined;
+      const picked = hostQuality ? pickLxQuality(hostQuality, declaredQualitys.get(source)) : null;
+      const lxType = picked?.lx ?? (hostQuality ? mapHostQualityToLx(hostQuality) : undefined);
+      const effectiveQuality = picked?.host;
       const info = {
         type: lxType,
         musicInfo: normalizeLxMusicInfo(reqObj.musicInfo, source),
       };
       const raw = await Promise.resolve(requestHandler({ source, action, info }));
-      // 严格归一为 { url }，避免脚本回包夹带闭包/Proxy 导致 postMessage 克隆失败
-      if (typeof raw === "string") return { url: raw } as MusicUrlRes;
+      // 严格归一为 { url, quality }，避免脚本回包夹带闭包/Proxy 导致 postMessage 克隆失败
+      if (typeof raw === "string") {
+        return {
+          url: raw,
+          ...(effectiveQuality ? { quality: effectiveQuality } : {}),
+        } as MusicUrlRes;
+      }
       if (raw && typeof raw === "object") {
         const url = (raw as Record<string, unknown>).url;
-        if (typeof url === "string") return { url } as MusicUrlRes;
+        if (typeof url === "string") {
+          return {
+            url,
+            ...(effectiveQuality ? { quality: effectiveQuality } : {}),
+          } as MusicUrlRes;
+        }
       }
       throw Object.assign(new Error("lx plugin returned invalid musicUrl result"), {
         code: "PLUGIN_INVALID_RESULT",

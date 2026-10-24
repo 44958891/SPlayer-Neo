@@ -7,8 +7,11 @@ import { useHistoryStore } from "@/stores/history";
 import SongList from "@/components/list/SongList.vue";
 import * as player from "@/core/player";
 import IconLucideTrash2 from "~icons/lucide/trash-2";
+import { sortTracks } from "@/utils/trackSort";
+import { useStatusStore } from "@/stores/status";
 
 const { t } = useI18n();
+const status = useStatusStore();
 const history = useHistoryStore();
 
 const playbackContext = computed<PlaybackContext>(() => ({
@@ -21,7 +24,8 @@ const searchQuery = ref("");
 
 const handlePlayAll = (): void => {
   if (history.tracks.length === 0) return;
-  player.playFrom(history.tracks, 0, playbackContext.value);
+  const ordered = sortTracks(history.tracks, status.sortField, status.sortOrder);
+  player.playFrom(ordered, 0, playbackContext.value);
 };
 
 const clearConfirmOpen = ref(false);

@@ -15,6 +15,8 @@ import { useSettingsDialog } from "@/settings/useSettingsDialog";
 import * as player from "@/core/player";
 import IconLucideListMusic from "~icons/lucide/list-music";
 import IconLucidePlus from "~icons/lucide/plus";
+import IconLucideImport from "~icons/lucide/import";
+import PlaylistImportDialog from "@/components/modals/PlaylistImportDialog.vue";
 import IconLucideChevronDown from "~icons/lucide/chevron-down";
 import IconLucideEyeOff from "~icons/lucide/eye-off";
 import IconLucideSettings2 from "~icons/lucide/settings-2";
@@ -45,6 +47,7 @@ const sourceOptions = computed<SSelectOption[]>(() => [
 ]);
 
 const createDialogOpen = ref(false);
+const importDialogOpen = ref(false);
 const createMode = ref<ContentScope>("local");
 
 const handleCreate = (): void => {
@@ -56,6 +59,18 @@ const handleCreate = (): void => {
 const handleCreated = (playlistId: string, scope: ContentScope): void => {
   status.myPlaylistSource = scope;
   router.push(`/collection/${scope === "local" ? "local" : "netease"}/playlist/${playlistId}`);
+};
+
+/** 打开歌单导入弹窗；导入成功后刷新歌单列表并跳到第一个新歌单 */
+const handleImport = (): void => {
+  importDialogOpen.value = true;
+};
+
+const handleImported = (playlistId: string): void => {
+  status.myPlaylistSource = "local";
+  void playlistStore.load().then(() => {
+    router.push(`/collection/local/playlist/${playlistId}`);
+  });
 };
 
 /** 我的歌单分组头部 */
@@ -84,6 +99,17 @@ const renderMyHeader = () =>
             ],
           ),
       },
+    ),
+    h(
+      SButton,
+      {
+        variant: "tertiary",
+        size: 26,
+        round: true,
+        title: t("playlist.import.menuEntry"),
+        onClick: handleImport,
+      },
+      { icon: () => h(IconLucideImport, { class: "size-3.5" }) },
     ),
     h(
       SButton,
@@ -341,6 +367,12 @@ watch(
 onMounted(() => {
   if (!playlistStore.initialized) playlistStore.load();
   void downloadStore.init();
+  // 移动适配：窄屏自动收起侧栏（图标条形态），宽屏展开
+  const applyNarrowSidebar = (): void => {
+    appearance.sidebarCollapsed = window.innerWidth < 900;
+  };
+  window.addEventListener("resize", applyNarrowSidebar);
+  applyNarrowSidebar();
 });
 </script>
 
@@ -371,5 +403,7 @@ onMounted(() => {
       :mode="createMode"
       @created="handleCreated"
     />
+    <!-- 导入歌单 -->
+    <PlaylistImportDialog v-model:open="importDialogOpen" @imported="handleImported" />
   </div>
 </template>

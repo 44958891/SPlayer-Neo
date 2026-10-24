@@ -23,7 +23,11 @@ import type {
   PluginInvokeMenuArgs,
   PluginResolveUrlArgs,
 } from "@shared/types/plugin";
-import { ACTION_TIMEOUTS, PluginErrorCodes } from "@shared/defaults/plugin-api";
+import {
+  ACTION_TIMEOUTS,
+  PluginErrorCodes,
+  REQUEST_MAX_TIMEOUT,
+} from "@shared/defaults/plugin-api";
 import { pluginRegistry, type PluginRuntime } from "./registry";
 import { pluginHost } from "./host-process";
 import { pluginLog } from "@main/utils/logger";
@@ -84,8 +88,13 @@ export const resolveUrl = async (args: PluginResolveUrlArgs): Promise<MusicUrlRe
     quality: args.quality ?? "hq",
     musicInfo: args.musicInfo,
   };
+  // 调用方可传更长超时（超时软失败后的重试）；上限 REQUEST_MAX_TIMEOUT 兜底
+  const timeoutMs = Math.min(
+    Math.max(args.timeoutMs ?? ACTION_TIMEOUTS.musicUrl, 1_000),
+    REQUEST_MAX_TIMEOUT,
+  );
   try {
-    return await callOn<MusicUrlRes>(rt, "musicUrl", params, ACTION_TIMEOUTS.musicUrl);
+    return await callOn<MusicUrlRes>(rt, "musicUrl", params, timeoutMs);
   } catch (err) {
     pluginLog.warn("resolveUrl rejected", args.pluginId, (err as Error)?.message);
     throw err;

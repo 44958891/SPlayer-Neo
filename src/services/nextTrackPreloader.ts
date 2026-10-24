@@ -6,6 +6,7 @@ import type { Track } from "@shared/types/player";
 import type { ResolvedTrackSource } from "@/services/audioSource";
 import { resolveTrackSource } from "@/services/audioSource";
 import { getNextTrackCandidate } from "@/core/player/candidate";
+import { peekShuffleNext } from "@/core/player/shuffle";
 import { invalidatePreloadedLyric, preloadLyricForTrack } from "@/services/lyric/preload";
 import { useStatusStore } from "@/stores/status";
 import { useSettingsStore } from "@/stores/settings";
@@ -212,6 +213,8 @@ export const scheduleNextTrackPreload = (): void => {
     skipKeywordsSongs: settings.preset.skipKeywordsSongs,
     skipTrackKeywords: settings.preset.skipTrackKeywords,
     shuffleMode: status.shuffleMode,
+    shuffleNextIndex: peekShuffleNext(queue.queue.value, status.currentTrack?.id, settings.preset)
+      ?.index,
   });
 
   if (!candidateResult) {

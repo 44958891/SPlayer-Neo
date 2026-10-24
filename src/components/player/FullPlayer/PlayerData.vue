@@ -4,7 +4,8 @@ import type { SSelectOption } from "@/components/ui/SSelect.vue";
 import { useMediaStore } from "@/stores/media";
 import { useStatusStore } from "@/stores/status";
 import { useSettingsStore } from "@/stores/settings";
-import { getQualityLabel, getQualityLevel } from "@/utils/quality";
+import { getQualityLevel } from "@/utils/quality";
+import QualityTag from "@/components/ui/QualityTag.vue";
 import {
   canNavigateToResource,
   navigateToResource,
@@ -87,15 +88,10 @@ const sourceLabel = computed(() => {
   return source.toUpperCase();
 });
 
-/** 音质等级标签 */
+/** 音质等级标签（按实际播放的音频信息判定，与本地音乐同款规则） */
 const quality = computed(() => media.detail?.quality ?? displayTrack.value?.quality);
-const qualityLabel = computed(() => getQualityLabel(quality.value));
-
-/** 是否为无损级别（显示图标） */
-const showLosslessIcon = computed(() => {
-  const level = getQualityLevel(quality.value);
-  return level === "hi-res" || level === "lossless";
-});
+/** 音质档位（按实际播放的音频信息判定，与本地音乐同款规则） */
+const playQualityLevel = computed(() => getQualityLevel(quality.value));
 
 /** 歌词格式标签 */
 const lyricLabel = computed(() => media.activeLyric?.format.toUpperCase() ?? "NO-LRC");
@@ -153,16 +149,15 @@ const alignItems = computed(() => {
     <!-- 元信息标签行 -->
     <div class="flex items-center gap-1.5 text-[1em] my-1 text-cover/60">
       <span
-        class="inline-flex items-center justify-center leading-none px-1.5 py-1.2 rounded-md border border-solid border-cover/30"
+        class="inline-flex h-[22px] items-center justify-center rounded-md border border-solid border-cover/30 px-1.5 text-[1em] leading-none"
       >
         {{ sourceLabel }}
       </span>
       <span
-        class="inline-flex items-center gap-1 leading-none px-1.5 py-1.2 rounded-md border border-solid border-cover/30 cursor-pointer transition-colors hover:border-cover/60"
+        class="inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-md border border-solid border-cover/30 px-1.5 text-[1em] leading-none transition-colors hover:border-cover/60"
         @click="status.audioInfoOpen = true"
       >
-        <IconSpLossless v-if="showLosslessIcon" class="text-[1.4em] -my-[0.4em]" />
-        {{ qualityLabel }}
+        <QualityTag :level="playQualityLevel" />
       </span>
       <SPopselect
         v-model="settings.lyric.lyricSourcePreference"
@@ -173,7 +168,7 @@ const alignItems = computed(() => {
       >
         <template #trigger>
           <span
-            class="inline-flex items-center justify-center leading-none px-1.5 py-1.2 rounded-md border border-solid border-cover/30 cursor-pointer transition-colors hover:border-cover/60"
+            class="inline-flex h-[22px] cursor-pointer items-center justify-center rounded-md border border-solid border-cover/30 px-1.5 text-[1em] leading-none transition-colors hover:border-cover/60"
           >
             {{ lyricLabel }}
           </span>

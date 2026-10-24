@@ -86,7 +86,8 @@ const createSearchId = (): string => {
 const searchMobile = (keywords: string, page: number, limit: number, searchType: number) =>
   qmRequest<MobileSearchResponse>(
     "music.search.SearchCgiService",
-    "DoSearchForQQMusicLite",
+    // Lite 版 method 已被 QQ 风控拦截（inner=2001），用完整版 Mobile；返回结构一致
+    "DoSearchForQQMusicMobile",
     {
       search_id: createSearchId(),
       remoteplace: "search.android.keyboard",
@@ -101,7 +102,8 @@ const searchMobile = (keywords: string, page: number, limit: number, searchType:
     },
     {
       session: false,
-      auth: false,
+      // 认证跟随登录态：未登录时等价匿名，已登录时带凭据降低风控概率
+      auth: true,
       comm: {
         tmeAppID: "qqmusiclight",
         cv: "1003006",

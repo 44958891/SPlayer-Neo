@@ -37,6 +37,19 @@ const otherCategory: SettingCategory = {
             "settings.platformLogin.manualCookie",
           ],
         },
+        {
+          key: "kwAccount",
+          type: "custom",
+          component: PlatformAccount,
+          componentProps: { platform: "kuwo" },
+          fullWidth: true,
+          keywords: [
+            "settings.platformLogin.title",
+            "settings.platformLogin.desc",
+            "settings.platformLogin.loginWeb",
+            "settings.platformLogin.manualCookie",
+          ],
+        },
       ],
     },
     {

@@ -33,6 +33,9 @@ const downloadCategory: SettingCategory = {
           type: "select",
           binding: { store: "settings", path: "system.download.quality" },
           options: [
+            { value: "jymaster", label: "Master" },
+            { value: "sky", label: "Sky" },
+            { value: "jyeffect", label: "Surround" },
             { value: "hi-res", label: "Hi-Res" },
             { value: "lossless", label: "Lossless" },
             { value: "hq", label: "HQ" },
@@ -40,12 +43,6 @@ const downloadCategory: SettingCategory = {
             { value: "lq", label: "LQ" },
           ],
           defaultValue: "lossless",
-        },
-        {
-          key: "downloadUsePlayback",
-          type: "switch",
-          binding: { store: "settings", path: "system.download.usePlaybackForDownload" },
-          defaultValue: false,
         },
         {
           key: "downloadFileTemplate",
@@ -79,6 +76,20 @@ const downloadCategory: SettingCategory = {
             { value: "skip", labelKey: "settings.downloadOverwrite.skip" },
           ],
           defaultValue: "rename",
+        },
+        {
+          key: "downloadSkipExisting",
+          type: "switch",
+          binding: { store: "settings", path: "system.download.skipExistingLocal" },
+          defaultValue: true,
+        },
+        {
+          key: "downloadConcurrency",
+          type: "number",
+          binding: { store: "settings", path: "system.download.concurrency" },
+          min: 1,
+          max: 6,
+          defaultValue: 1,
         },
       ],
     },

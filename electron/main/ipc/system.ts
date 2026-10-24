@@ -1,5 +1,5 @@
-import { app, ipcMain, shell } from "electron";
-import { writeFile } from "node:fs/promises";
+import { app, dialog, ipcMain, net, shell } from "electron";
+import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, basename } from "node:path";
 import { getFonts } from "font-list";
@@ -94,6 +94,48 @@ export const registerSystemIpc = (): void => {
     const buf = await fetchBytes(url, { requireImage: true });
     return { success: true, data: buf };
   });
+
+  // 解析短链跳转：跟随重定向拿最终地址（163cn.tv 等），最多 5 跳
+  ipcMain.handle("system:resolveRedirect", async (_event, url: string) => {
+    if (typeof url !== "string" || !/^https?:\/\//i.test(url)) {
+      return { success: false, error: "invalid url" };
+    }
+    try {
+      let current = url;
+      for (let hop = 0; hop < 5; hop++) {
+        const res = await net.fetch(current, { redirect: "follow" });
+        const final = res.url;
+        if (!final || final === current) break;
+        current = final;
+      }
+      return { success: true, url: current };
+    } catch (error) {
+      systemLog.error("[system] resolveRedirect failed", error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // 打开并读取文本文件（歌单备份导入）；返回文本内容
+  ipcMain.handle(
+    "system:openTextFile",
+    async (_event, filters?: { name: string; exts: string[] }) => {
+      try {
+        const result = await dialog.showOpenDialog({
+          properties: ["openFile"],
+          filters: filters?.exts?.length
+            ? [{ name: filters.name, extensions: filters.exts }]
+            : undefined,
+        });
+        if (result.canceled || result.filePaths.length === 0)
+          return { success: false, canceled: true };
+        const content = await readFile(result.filePaths[0], "utf-8");
+        return { success: true, content, path: result.filePaths[0] };
+      } catch (error) {
+        systemLog.error("[system] openTextFile failed", error);
+        return { success: false, error: String(error) };
+      }
+    },
+  );
 
   // 保存文件到下载目录
   ipcMain.handle("system:saveFile", async (_event, data: ArrayBuffer, fileName: string) => {

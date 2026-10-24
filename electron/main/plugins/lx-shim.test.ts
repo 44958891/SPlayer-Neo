@@ -1,7 +1,59 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { normalizeLxMusicInfo } from "./lx-shim";
+import { mapLxQualityToHost, normalizeLxMusicInfo, pickLxQuality } from "./lx-shim";
+
+/** 第三方脚本真实声明（ikun / EM 音源） */
+const IKUN_WY = new Set(["128k", "320k", "flac", "flac24bit", "hires", "atmos", "master"]);
+const IKUN_KW = new Set(["128k", "320k", "flac", "flac24bit", "hires"]);
+
+describe("pickLxQuality 音质翻译", () => {
+  it("注册映射识别环绕/母带档", () => {
+    assert.equal(mapLxQualityToHost("master"), "jymaster");
+    assert.equal(mapLxQualityToHost("MASTER"), "jymaster");
+    assert.equal(mapLxQualityToHost("atmos"), "sky");
+    assert.equal(mapLxQualityToHost("atmos_plus"), "sky");
+    assert.equal(mapLxQualityToHost("hires"), "hi-res");
+  });
+
+  it("插件声明 master 时母带档翻译成 master 而非 flac24bit", () => {
+    assert.deepEqual(pickLxQuality("jymaster", IKUN_WY), { lx: "master", host: "jymaster" });
+  });
+
+  it("插件不支持母带档时按候选链降级", () => {
+    const picked = pickLxQuality("jymaster", IKUN_KW);
+    assert.equal(picked.lx, "hires");
+    assert.equal(picked.host, "hi-res");
+  });
+
+  it("沉浸环绕声翻译成 atmos", () => {
+    assert.deepEqual(pickLxQuality("sky", IKUN_WY), { lx: "atmos", host: "sky" });
+  });
+
+  it("高清环绕声回落到候选链中的 atmos", () => {
+    const picked = pickLxQuality("jyeffect", IKUN_WY);
+    assert.equal(picked.lx, "atmos");
+    assert.equal(picked.host, "sky");
+  });
+
+  it("高解析档优先声明中的 flac24bit，缺省时用 hires", () => {
+    assert.equal(pickLxQuality("hi-res", IKUN_WY).lx, "flac24bit");
+    assert.equal(pickLxQuality("hi-res", new Set(["128k", "320k", "hires"])).lx, "hires");
+  });
+
+  it("未声明 qualitys 的脚本沿用静态兜底映射", () => {
+    const picked = pickLxQuality("jymaster", undefined);
+    assert.equal(picked.lx, "flac24bit");
+    assert.equal(picked.host, "hi-res");
+    assert.equal(pickLxQuality("lossless", new Set()).lx, "flac");
+  });
+
+  it("声明与候选链无交集时取不高于请求的最高声明档", () => {
+    const picked = pickLxQuality("lossless", new Set(["128k"]));
+    assert.equal(picked.lx, "128k");
+    assert.equal(picked.host, "lq");
+  });
+});
 
 describe("normalizeLxMusicInfo", () => {
   it("处理网易云等无 hash 歌曲时，不应设置空串 hash，且 ?? 能正确兜底到 songmid", () => {

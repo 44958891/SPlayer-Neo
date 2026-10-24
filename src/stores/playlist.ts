@@ -92,11 +92,11 @@ export const usePlaylistStore = defineStore("playlist", () => {
     playlists.value = playlists.value.filter((playlist) => playlist.id !== id);
   };
 
-  /** 添加歌曲到本地歌单 */
+  /** 添加歌曲到本地歌单（本地/在线曲目都支持，在线曲目落快照） */
   const addTracks = async (id: string, tracks: Track[]): Promise<number> => {
-    const count = await window.api.playlist.addTracks(
+    const count = await window.api.playlist.addTrackObjects(
       id,
-      tracks.map((track) => track.id),
+      JSON.parse(JSON.stringify(tracks)) as Track[],
     );
     if (count > 0) {
       const cover = tracks.find((track) => track.cover)?.cover;

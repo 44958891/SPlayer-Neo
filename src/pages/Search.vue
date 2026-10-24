@@ -7,6 +7,7 @@ import type { CoverItem } from "@/types/artist";
 import { searchSongs, searchAlbums, searchArtists, searchPlaylists } from "@/apis/search";
 import SongList from "@/components/list/SongList.vue";
 import CoverList from "@/components/list/CoverList.vue";
+import * as player from "@/core/player";
 import { useStatusStore } from "@/stores/status";
 import { navigateToAlbum, navigateToArtist, navigateToPlaylist } from "@/utils/navigate";
 
@@ -187,6 +188,9 @@ const isEmptyResult = computed(() => {
   return state.loaded && state.items.length === 0;
 });
 
+/** 单曲 tab 的已加载曲目（播放全部的目标队列） */
+const songItems = computed(() => states.songs.items);
+
 /** 搜索页播放来源上下文 */
 const playbackContext = computed<PlaybackContext>(() => ({
   provider: status.searchPlatform,
@@ -194,6 +198,15 @@ const playbackContext = computed<PlaybackContext>(() => ({
   originType: "page",
   originName: keyword.value ? `${t("search.title")}: ${keyword.value}` : t("search.title"),
 }));
+
+/** 播放全部：仅在单曲 tab 且已有结果时可用 */
+const canPlayAll = computed(() => activeTab.value === "songs" && songItems.value.length > 0);
+
+/** 从首曲开始播放当前搜索结果 */
+const handlePlayAll = (): void => {
+  if (!canPlayAll.value) return;
+  player.playFrom(songItems.value, 0, playbackContext.value);
+};
 </script>
 
 <template>
@@ -212,8 +225,8 @@ const playbackContext = computed<PlaybackContext>(() => ({
             {{ t("search.titleSuffix") }}
           </span>
         </h1>
-        <!-- 平台切换 -->
-        <div class="shrink-0 w-40">
+        <!-- 平台切换：宽度按 4 枚标签（NCM/QM/KG/KW）自适应 -->
+        <div class="shrink-0 w-64">
           <STabs
             :model-value="status.searchPlatform"
             :tabs="platformTabs"
@@ -223,7 +236,26 @@ const playbackContext = computed<PlaybackContext>(() => ({
           />
         </div>
       </div>
-      <STabs :model-value="activeTab" :tabs="tabs" @update:model-value="onTabSwitch" />
+      <div class="flex items-center justify-between gap-4">
+        <STabs :model-value="activeTab" :tabs="tabs" @update:model-value="onTabSwitch" />
+        <Transition name="fade" :duration="150">
+          <SButton
+            v-if="canPlayAll"
+            type="primary"
+            variant="secondary"
+            size="small"
+            round
+            class="shrink-0"
+            :title="t('common.playAll')"
+            @click="handlePlayAll"
+          >
+            <template #icon>
+              <IconLucidePlay />
+            </template>
+            {{ t("common.playAll") }}
+          </SButton>
+        </Transition>
+      </div>
     </div>
     <!-- 空关键词 -->
     <div v-if="!keyword" class="flex-1 flex items-center justify-center">
@@ -275,6 +307,7 @@ const playbackContext = computed<PlaybackContext>(() => ({
         :items="states.songs.items"
         :source="status.searchPlatform"
         :playback-context="playbackContext"
+        show-local-badge
         :show-size="false"
         :has-more="states.songs.hasMore"
         :loading-more="states.songs.loadingMore"
@@ -305,7 +338,9 @@ const playbackContext = computed<PlaybackContext>(() => ({
         :loading-more="states.artists.loadingMore"
         @click="
           (item) =>
-            navigateToArtist(item.title, { source: status.searchPlatform, artistId: item.id })
+            status.searchPlatform === 'migu'
+              ? undefined
+              : navigateToArtist(item.title, { source: status.searchPlatform, artistId: item.id })
         "
         @reach-bottom="onReachBottom('artists')"
       />

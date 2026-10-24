@@ -6,7 +6,8 @@ import { useStatusStore } from "@/stores/status";
 import { useDownloadStore } from "@/stores/download";
 import { useDownload } from "@/composables/useDownload";
 import { dialog } from "@/composables/useDialog";
-import { isLosslessQuality, getQualityLabel } from "@/utils/quality";
+import { getQualityLevel } from "@/utils/quality";
+import QualityTag from "@/components/ui/QualityTag.vue";
 import { formatTime } from "@/utils/time";
 import { formatFileSize } from "@/utils/format";
 import * as player from "@/core/player";
@@ -194,6 +195,12 @@ defineExpose({ playAll });
                 >
                   {{ item.track.title }}
                 </span>
+                <span
+                  v-if="item.replaceSourcePath"
+                  class="inline-flex h-[18px] shrink-0 items-center self-center rounded px-1 text-[10px] font-bold leading-none text-primary ring-1 ring-inset ring-primary/35"
+                >
+                  {{ t("download.upgradeTag") }}
+                </span>
                 <IconLucideTriangleAlert
                   v-if="item.tagWarning"
                   class="size-3.5 shrink-0 self-center text-amber-500"
@@ -204,17 +211,11 @@ defineExpose({ playAll });
                 class="text-sm mt-1 truncate flex items-center gap-1"
                 :class="isPlaying(item) ? 'text-primary/70' : 'text-on-surface-variant'"
               >
-                <span
+                <QualityTag
                   v-if="item.track.quality"
-                  class="shrink-0 px-1 rounded text-[10px] leading-[18px] font-bold border border-solid"
-                  :class="
-                    isLosslessQuality(item.track.quality)
-                      ? 'text-amber-500 border-amber-500/40'
-                      : 'text-on-surface-variant border-on-surface-variant/40'
-                  "
-                >
-                  {{ getQualityLabel(item.track.quality) }}
-                </span>
+                  :level="getQualityLevel(item.track.quality)"
+                  class="h-[18px]"
+                />
                 <span class="truncate">{{ artistText(item) }}</span>
               </div>
             </div>

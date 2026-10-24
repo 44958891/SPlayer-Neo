@@ -10,15 +10,15 @@ import { resolveDownloadSource } from "@/services/download/source";
 import { resolveDownloadLyric } from "@/services/download/lyric";
 import { buildDownloadLyric } from "@/utils/lyric/serialize";
 import { toast } from "@/composables/useToast";
+import { ErrorCode } from "@shared/types/errors";
 
 /** 解析单个任务的 URL 与歌词 */
 const resolvePayload = async (payload: DownloadResolvePayload): Promise<DownloadResolution> => {
-  const source = await resolveDownloadSource(
-    payload.track,
-    payload.qualityLevel,
-    payload.usePlaybackForDownload,
-  );
-  if (!source) throw new Error("no download source");
+  const source = await resolveDownloadSource(payload.track, payload.qualityLevel);
+  if (!source.ok) {
+    // 带上原因码：监听方据此给出具体提示（探针拒绝 ≠ 插件缺失，处理方向完全不同）
+    throw Object.assign(new Error("no download source"), { errorCode: source.errorCode });
+  }
   const { tagOptions } = payload;
   let lyricText: string | undefined;
   let ttmlText: string | undefined;
@@ -51,13 +51,25 @@ const resolvePayload = async (payload: DownloadResolvePayload): Promise<Download
   };
 };
 
+/** 从异常里取原因码（resolvePayload 抛出时携带） */
+const errorCodeOf = (err: unknown): string | undefined =>
+  (err as { errorCode?: string } | null)?.errorCode;
+
 /** 注册解析请求监听 */
 export const initDownloadResolver = (): (() => void) =>
   window.api.download.onResolve((payload) => {
     resolvePayload(payload)
       .then((res) => window.api.download.submitResolution(payload.taskId, res))
-      .catch(() => {
-        toast.error(i18n.global.t("download.resolveFailed", { title: payload.track.title }));
+      .catch((err: unknown) => {
+        // 探针拒绝（音源只有试听片段/防盗链）单独提示，避免笼统的"无法下载"
+        const code = errorCodeOf(err);
+        const key =
+          code === ErrorCode.SOURCE_PROBE_REJECTED
+            ? "download.resolveProbeRejected"
+            : code === ErrorCode.NO_PLUGIN_AVAILABLE
+              ? "download.resolveNoPlugin"
+              : "download.resolveFailed";
+        toast.error(i18n.global.t(key, { title: payload.track.title }));
         void window.api.download.failResolution(payload.taskId);
       });
   });

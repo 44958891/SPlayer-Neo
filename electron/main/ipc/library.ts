@@ -25,6 +25,7 @@ import { libraryLog } from "@main/utils/logger";
 import { ErrorCode } from "@shared/types/errors";
 import type { JsTagWriteRequest } from "@splayer/audio-engine";
 import type { TagEditRequest, TagWriteOutcome } from "@shared/types/tagEditor";
+import type { TagBatchEntry } from "@shared/types/library";
 
 /** 注册音乐库相关 IPC */
 export const registerLibraryIpc = (): void => {
@@ -227,6 +228,44 @@ export const registerLibraryIpc = (): void => {
       return { success: true, data: tags };
     } catch (error) {
       libraryLog.error(`读取标签失败 [${path}]:`, error);
+      return { success: false, error: ErrorCode.TAG_READ_FAILED };
+    }
+  });
+
+  // 批量读标签（补全封面/歌词前的体检用）：逐首单次 IPC 在几千首规模下往返过重
+  ipcMain.handle("library:readTagsBatch", async (_event, paths: string[]) => {
+    const list = Array.isArray(paths) ? paths : [];
+    try {
+      const engine = getEngine();
+      const results: TagBatchEntry[] = [];
+      // 分批并行：引擎侧读标签是阻塞 IO，并发过高反而排队，这里按 8 路推进
+      const CONCURRENCY = 8;
+      for (let start = 0; start < list.length; start += CONCURRENCY) {
+        const slice = list.slice(start, start + CONCURRENCY);
+        const settled = await Promise.all(
+          slice.map(async (path): Promise<TagBatchEntry> => {
+            try {
+              const tags = await engine.readTrackTags(path);
+              return {
+                path,
+                ok: true,
+                hasCover: tags.hasCover,
+                lyricLength: (tags.lyrics ?? "").trim().length,
+              };
+            } catch (error) {
+              return {
+                path,
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+              };
+            }
+          }),
+        );
+        results.push(...settled);
+      }
+      return { success: true, data: results };
+    } catch (error) {
+      libraryLog.error("批量读取标签失败:", error);
       return { success: false, error: ErrorCode.TAG_READ_FAILED };
     }
   });

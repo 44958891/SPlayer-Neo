@@ -10,6 +10,8 @@ export interface CandidateContext {
   skipKeywordsSongs: boolean;
   skipTrackKeywords: readonly string[];
   shuffleMode: ShuffleMode;
+  /** 随机模式下已预定好的下一首索引（播放列表顺序不动，随机只决定跳转目标） */
+  shuffleNextIndex?: number | null;
 }
 
 /** 候选查找结果 */
@@ -27,22 +29,25 @@ export const getNextTrackCandidate = (ctx: CandidateContext): CandidateResult | 
   if (ctx.fmMode) return null;
   const len = ctx.queue.length;
   if (len <= 1) return null;
-  // 随机模式到达队尾时不缓存
-  if (ctx.shuffleMode === "on" && ctx.playIndex >= len - 1) return null;
+  // 随机模式：只认预定的下一首（与真正切歌共用同一决定），没有则不缓存
+  if (ctx.shuffleMode === "on") {
+    const index = ctx.shuffleNextIndex;
+    if (index == null || index < 0 || index >= len || index === ctx.playIndex) return null;
+    const track = ctx.queue[index];
+    return track ? { track, index } : null;
+  }
 
   let candidateIndex = (ctx.playIndex + 1) % len;
   let count = 0;
 
   while (count < len) {
-    // 随机模式跨过队尾不缓存
-    if (ctx.shuffleMode === "on" && candidateIndex >= len) return null;
     const track = ctx.queue[candidateIndex];
     if (track) {
       if (!ctx.skipKeywordsSongs || !shouldSkipKeywordTrack(track, ctx.skipTrackKeywords)) {
         return { track, index: candidateIndex };
       }
     }
-    candidateIndex = ctx.shuffleMode === "on" ? candidateIndex + 1 : (candidateIndex + 1) % len;
+    candidateIndex = (candidateIndex + 1) % len;
     count++;
   }
 

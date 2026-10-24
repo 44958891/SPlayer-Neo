@@ -12,7 +12,9 @@ import { NeteaseRequestError } from "@main/apis/netease/core/request";
 import { cookieToJson } from "@main/apis/netease/core/cookie";
 import { callQQMusic, clearQQMusicCookies, mergeQQMusicCookies } from "@main/apis/qqmusic";
 import { callKugou, clearKugouSession, mergeKugouSession } from "@main/apis/kugou";
-import { openNeteaseLoginWindow } from "@main/window/login";
+import { callKuwo, clearKuwoSession, mergeKuwoSession } from "@main/apis/kuwo";
+import { callMigu } from "@main/apis/migu";
+import { openNeteaseLoginWindow, openKuwoLoginWindow } from "@main/window/login";
 import { coreLog } from "@main/utils/logger";
 import type { ApiPlatform } from "@shared/types/apis";
 
@@ -33,6 +35,14 @@ const dispatch = async (
     }
     case "kugou": {
       const data = await callKugou(name, params);
+      return { data };
+    }
+    case "kuwo": {
+      const data = await callKuwo(name, params);
+      return { data };
+    }
+    case "migu": {
+      const data = await callMigu(name, params);
       return { data };
     }
     default:
@@ -66,6 +76,7 @@ export const registerApisIpc = (): void => {
     if (platform === "netease") clearNeteaseCookies();
     if (platform === "qqmusic") clearQQMusicCookies();
     if (platform === "kugou") clearKugouSession();
+    if (platform === "kuwo") clearKuwoSession();
   });
 
   // 打开官方网页登录，成功后把 cookies 合并写入 session
@@ -75,6 +86,12 @@ export const registerApisIpc = (): void => {
         const cookies = await openNeteaseLoginWindow();
         if (!cookies) return { ok: false, error: "canceled" };
         mergeNeteaseCookies(cookies);
+        return { ok: true };
+      }
+      if (platform === "kuwo") {
+        const cookies = await openKuwoLoginWindow();
+        if (!cookies) return { ok: false, error: "canceled" };
+        mergeKuwoSession(cookies);
         return { ok: true };
       }
       return { ok: false, error: "unsupported platform" };
@@ -110,6 +127,14 @@ export const registerApisIpc = (): void => {
         return { ok: false, error: "missing token or userid" };
       }
       mergeKugouSession(parsed);
+      return { ok: true };
+    }
+    if (platform === "kuwo") {
+      // 酷我登录态以 userid（非 0）为准；sid/token 供接口鉴权
+      if (!parsed.userid || parsed.userid === "0") {
+        return { ok: false, error: "missing userid" };
+      }
+      mergeKuwoSession(parsed);
       return { ok: true };
     }
     return { ok: false, error: "unsupported platform" };

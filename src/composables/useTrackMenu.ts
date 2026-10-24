@@ -22,6 +22,7 @@ import IconCopy from "~icons/lucide/copy";
 import IconTrash2 from "~icons/lucide/trash-2";
 import IconListMinus from "~icons/lucide/list-minus";
 import IconCloudOff from "~icons/lucide/cloud-off";
+import IconRepeat from "~icons/lucide/repeat";
 import IconSearch from "~icons/lucide/search";
 import IconMessageCircle from "~icons/lucide/message-circle";
 import IconMoreHorizontal from "~icons/lucide/more-horizontal";
@@ -44,6 +45,8 @@ export interface TrackMenuOptions {
   onDeleteFile?: (track: Track) => void;
   /** 编辑元数据回调 */
   onEditTags?: (track: Track) => void;
+  /** 打开手动换源弹窗 */
+  onSwitchSource?: (track: Track) => void;
   /** 下载回调；quality 为空表示用设置中的默认音质 */
   onDownload?: (track: Track, quality?: QualityLevel) => void;
   /** 从云盘删除回调 */
@@ -139,6 +142,12 @@ export const useTrackMenu = (
         icon: markRaw(IconCloudOff),
         separator: true,
         show: showCloudRemove,
+      },
+      {
+        key: "switchSource",
+        label: t("playlist.switchSource.title"),
+        icon: markRaw(IconRepeat),
+        show: !isLocal && !!options.onSwitchSource,
       },
       {
         key: "searchSame",
@@ -254,6 +263,9 @@ export const useTrackMenu = (
         break;
       case "removeFromCloud":
         options.onRemoveFromCloud?.(current);
+        break;
+      case "switchSource":
+        options.onSwitchSource?.(current);
         break;
       case "searchSame":
         router.push({ path: "/search", query: { q: current.title } });

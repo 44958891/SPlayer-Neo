@@ -20,8 +20,11 @@ import type { DropdownMenuItem } from "@/components/ui/SDropdownMenu.vue";
 import IconLucideListChecks from "~icons/lucide/list-checks";
 import IconMaterialSymbolsFavoriteRounded from "~icons/material-symbols/favorite-rounded";
 import IconMaterialSymbolsFavoriteOutlineRounded from "~icons/material-symbols/favorite-outline-rounded";
+import { sortTracks } from "@/utils/trackSort";
+import { useStatusStore } from "@/stores/status";
 
 const { t } = useI18n();
+const status = useStatusStore();
 const route = useRoute();
 const router = useRouter();
 const { appearance } = useSettingsStore();
@@ -149,7 +152,8 @@ const playbackContext = computed<PlaybackContext>(() => ({
 
 const handlePlayAll = () => {
   if (!artist.value?.tracks.length) return;
-  player.playFrom(artist.value.tracks, 0, playbackContext.value);
+  const ordered = sortTracks(artist.value.tracks, status.sortField, status.sortOrder);
+  player.playFrom(ordered, 0, playbackContext.value);
 };
 
 /** 收藏歌手仅支持网易云 */
@@ -361,6 +365,7 @@ const albumItems = computed<CoverItem[]>(() => {
               :items="artist.tracks"
               :search-query="searchQuery"
               :source="source"
+              show-local-badge
               :playback-context="playbackContext"
               :show-size="source === 'local'"
               :has-more="hasMoreSongs"

@@ -5,6 +5,7 @@ import type {
   PlaylistUpdateInput,
 } from "@shared/types/playlist";
 import {
+  addPlaylistTrackObjects,
   addPlaylistTracks,
   clearPlaylists,
   createPlaylist,
@@ -26,6 +27,9 @@ export const registerPlaylistIpc = (): void => {
   ipcMain.handle("playlist:remove", (_event, id: string) => deletePlaylist(id));
   ipcMain.handle("playlist:addTracks", (_event, id: string, trackIds: string[]) =>
     addPlaylistTracks(id, trackIds),
+  );
+  ipcMain.handle("playlist:addTrackObjects", (_event, id: string, tracks: unknown[]) =>
+    addPlaylistTrackObjects(id, tracks as Parameters<typeof addPlaylistTrackObjects>[1]),
   );
   ipcMain.handle("playlist:removeTracks", (_event, id: string, trackIds: string[]) =>
     removePlaylistTracks(id, trackIds),

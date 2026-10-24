@@ -3,6 +3,7 @@ import type { PluginInfo } from "@shared/types/plugin";
 import { usePluginsStore } from "@/stores/plugins";
 import { toast } from "@/composables/useToast";
 import { isExternalUrl, openExternal } from "@/utils/url";
+import SourceHealthDialog from "./SourceHealthDialog.vue";
 
 defineOptions({ inheritAttrs: false });
 
@@ -20,6 +21,8 @@ const updateDialogOpen = ref(false);
 const updateDialogId = ref<string | null>(null);
 const detailDialogOpen = ref(false);
 const detailDialogId = ref<string | null>(null);
+/** 音源体检弹窗 */
+const healthDialogOpen = ref(false);
 
 onMounted(() => {
   if (!loaded.value) void pluginsStore.load();
@@ -196,7 +199,16 @@ const refreshMarket = async (): Promise<void> => {
     <div class="flex items-center justify-between gap-2">
       <STabs v-model="tab" type="bar" :tabs="tabs" />
       <SButton
-        v-if="tab === 'market'"
+        v-if="tab === 'installed' && sourcePlugins.length > 0"
+        variant="text"
+        size="small"
+        @click="healthDialogOpen = true"
+      >
+        <template #icon><IconLucideActivity class="size-4" /></template>
+        {{ t("settings.plugins.check.entry") }}
+      </SButton>
+      <SButton
+        v-else-if="tab === 'market'"
         variant="text"
         size="small"
         :loading="refreshing"
@@ -366,5 +378,8 @@ const refreshMarket = async (): Promise<void> => {
 
     <!-- 插件详情 -->
     <PluginDetailDialog v-model:open="detailDialogOpen" :info="detailDialogInfo" />
+
+    <!-- 音源体检 -->
+    <SourceHealthDialog v-model:open="healthDialogOpen" />
   </div>
 </template>

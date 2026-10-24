@@ -6,6 +6,7 @@ import type {
   PlaylistSummary,
   PlaylistUpdateInput,
 } from "@shared/types/playlist";
+import type { Track } from "@shared/types/player";
 import { getDb } from "@main/database";
 import { getTracksByIds } from "@main/database/queries";
 
@@ -74,13 +75,27 @@ export const getPlaylist = (id: string): PlaylistDetail | null => {
     .prepare(
       `SELECT pt.track_id
        FROM playlist_tracks pt
-       INNER JOIN tracks t ON t.id = pt.track_id
        WHERE pt.playlist_id = ?
        ORDER BY pt.position, pt.added_at, pt.track_id`,
     )
     .all(id) as { track_id: string }[];
   const fetched = getTracksByIds(trackIds.map((item) => item.track_id));
   const byId = new Map(fetched.map((track) => [track.id, track]));
+  // 本地表没有的曲目从 external_tracks 兜底（导入的在线歌单）
+  const missing = trackIds.map((item) => item.track_id).filter((id) => !byId.has(id));
+  if (missing.length > 0) {
+    const rows = getDb()
+      .prepare(`SELECT data FROM external_tracks WHERE id IN (${missing.map(() => "?").join(",")})`)
+      .all(...missing) as { data: string }[];
+    for (const row of rows) {
+      try {
+        const track = JSON.parse(row.data) as Track;
+        byId.set(track.id, track);
+      } catch {
+        // 行损坏：忽略
+      }
+    }
+  }
   return {
     ...toSummary(row),
     tracks: trackIds.flatMap((item) => {
@@ -188,6 +203,73 @@ export const addPlaylistTracks = (id: string, trackIds: string[]): number => {
     database
       .prepare("UPDATE playlists SET cover = COALESCE(?, cover), updated_at = ? WHERE id = ?")
       .run(coverRow?.cover ?? null, now, id);
+    return validIds.length;
+  })();
+};
+
+/** 批量写入外部（在线）曲目快照 */
+export const upsertExternalTracks = (tracks: Track[]): void => {
+  if (tracks.length === 0) return;
+  const database = getDb();
+  const stmt = database.prepare(
+    `INSERT OR REPLACE INTO external_tracks (id, source, data, added_at) VALUES (?, ?, ?, ?)`,
+  );
+  const now = Date.now();
+  database.transaction(() => {
+    for (const track of tracks) {
+      stmt.run(track.id, track.source, JSON.stringify(track), now);
+    }
+  })();
+};
+
+/**
+ * 添加曲目（含在线曲目）到本地歌单
+ *
+ * 本地曲目要求已在 tracks 表；在线曲目写入 external_tracks 快照，
+ * 播放时按 source/id 走对应平台解析。
+ */
+export const addPlaylistTrackObjects = (id: string, tracks: Track[]): number => {
+  const playlist = getPlaylists().find((item) => item.id === id);
+  if (!playlist || playlist.type !== "local") return 0;
+  const database = getDb();
+  const unique = new Map<string, Track>();
+  for (const track of tracks) {
+    if (track?.id) unique.set(track.id, track);
+  }
+  if (unique.size === 0) return 0;
+  const external = [...unique.values()].filter((track) => track.source !== "local");
+  if (external.length > 0) upsertExternalTracks(external);
+  return database.transaction(() => {
+    const existing = database
+      .prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id = ?")
+      .all(id) as { track_id: string }[];
+    const existingIds = new Set(existing.map((item) => item.track_id));
+    const validIds: string[] = [];
+    for (const track of unique.values()) {
+      if (existingIds.has(track.id)) continue;
+      if (track.source === "local") {
+        const ok = database.prepare("SELECT 1 FROM tracks WHERE id = ?").get(track.id);
+        if (!ok) continue;
+      } else {
+        const ok = database.prepare("SELECT 1 FROM external_tracks WHERE id = ?").get(track.id);
+        if (!ok) continue;
+      }
+      validIds.push(track.id);
+    }
+    if (validIds.length === 0) return 0;
+    database
+      .prepare("UPDATE playlist_tracks SET position = position + ? WHERE playlist_id = ?")
+      .run(validIds.length, id);
+    const insert = database.prepare(
+      `INSERT INTO playlist_tracks (playlist_id, track_id, position, added_at)
+       VALUES (?, ?, ?, ?)`,
+    );
+    const now = Date.now();
+    validIds.forEach((trackId, position) => insert.run(id, trackId, position, now));
+    const cover = [...unique.values()].find((track) => track.cover)?.cover;
+    database
+      .prepare("UPDATE playlists SET cover = COALESCE(?, cover), updated_at = ? WHERE id = ?")
+      .run(cover ?? null, now, id);
     return validIds.length;
   })();
 };

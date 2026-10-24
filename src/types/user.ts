@@ -9,7 +9,7 @@ export interface UserProfile {
   avatarUrl?: string;
   backgroundUrl?: string;
   signature?: string;
-  /** 0=普通，非 0=黑胶 VIP */
+  /** 会员类型：0/缺失=未开通，10/100 及其他非 0=普通会员（CVIP），11/110=超级会员（SVIP） */
   vipType?: number;
   gender?: number;
   province?: number;

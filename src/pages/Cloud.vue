@@ -12,8 +12,11 @@ import IconLucideListChecks from "~icons/lucide/list-checks";
 import IconLucideCloud from "~icons/lucide/cloud";
 import IconLucideHardDrive from "~icons/lucide/hard-drive";
 import IconLucideCloudUpload from "~icons/lucide/cloud-upload";
+import { sortTracks } from "@/utils/trackSort";
+import { useStatusStore } from "@/stores/status";
 
 const { t } = useI18n();
+const status = useStatusStore();
 const user = useUserStore();
 
 const playbackContext = computed<PlaybackContext>(() => ({
@@ -43,7 +46,8 @@ const trackCount = computed(() => user.cloudCount || user.cloudTracks.length);
 
 const handlePlayAll = (): void => {
   if (user.cloudTracks.length === 0) return;
-  player.playFrom(user.cloudTracks, 0, playbackContext.value);
+  const ordered = sortTracks(user.cloudTracks, status.sortField, status.sortOrder);
+  player.playFrom(ordered, 0, playbackContext.value);
 };
 
 const songListRef = shallowRef<InstanceType<typeof SongList> | null>(null);
@@ -165,6 +169,7 @@ watch(
           :search-query="searchQuery"
           :playback-context="playbackContext"
           source="netease"
+          show-local-badge
           collection-type="cloud"
           enable-sort
         />

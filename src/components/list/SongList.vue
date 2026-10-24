@@ -2,6 +2,7 @@
 import type { Artist, PlaybackContext, Track, TrackSource } from "@shared/types/player";
 import type { CollectionType } from "@/types/collection";
 import type { SortField } from "@/types/list";
+import { sortTracks } from "@/utils/trackSort";
 import { useMediaStore } from "@/stores/media";
 import { useStatusStore } from "@/stores/status";
 import { useSettingsStore } from "@/stores/settings";
@@ -13,7 +14,10 @@ import { usePlaylistPicker } from "@/composables/usePlaylistPicker";
 import { useFloatingPlayerBar } from "@/composables/useFloatingPlayerBar";
 import { formatTime } from "@/utils/time";
 import { formatFileSize } from "@/utils/format";
-import { isLosslessQuality, getQualityLabel } from "@/utils/quality";
+import { getQualityLevel } from "@/utils/quality";
+import { buildLocalMatchIndex, findLocalMatch, type LocalMatchIndex } from "@/utils/localMatch";
+import { useLibraryStore } from "@/stores/library";
+import QualityTag from "@/components/ui/QualityTag.vue";
 import { navigateToAlbum, navigateToArtist } from "@/utils/navigate";
 import type { SVirtualListExposed } from "@/components/ui/SVirtualList.vue";
 import * as player from "@/core/player";
@@ -57,6 +61,8 @@ const props = withDefaults(
     playbackContext?: PlaybackContext;
     /** 是否有权从集合移除曲目 */
     canRemove?: boolean;
+    /** 在线列表中标出「本地已有」（本地库同曲） */
+    showLocalBadge?: boolean;
     /** 是否还能继续触底加载 */
     hasMore?: boolean;
     /** 触底加载中 */
@@ -74,6 +80,7 @@ const props = withDefaults(
     collectionId: undefined,
     playbackContext: undefined,
     canRemove: true,
+    showLocalBadge: false,
     hasMore: false,
     loadingMore: false,
   },
@@ -84,19 +91,36 @@ const route = useRoute();
 const media = useMediaStore();
 const status = useStatusStore();
 const settings = useSettingsStore();
+const libraryStore = useLibraryStore();
 const fav = useFavorite();
 
 const { isFloatingBar: isFloatingPlayerBar, PLAYER_BAR_GAP } = useFloatingPlayerBar();
 
-/** 排序器 默认使用 base 敏感度，忽略大小写 */
-const textCollator = new Intl.Collator(undefined, {
-  usage: "sort",
-  sensitivity: "base",
-  numeric: true,
-});
-
 /** 当前播放歌曲 ID */
 const playingId = computed(() => media.track?.id);
+
+// 需要标「本地已有」时确保本地库已加载（用户可能直接进搜索页，没进过音乐库）
+watch(
+  () => props.showLocalBadge,
+  (on) => {
+    if (on && !libraryStore.initialized) void libraryStore.load();
+  },
+  { immediate: true },
+);
+
+/** 本地曲目索引：仅在需要标「本地已有」且当前是在线列表时构建 */
+const localIndex = computed<LocalMatchIndex | null>(() => {
+  if (!props.showLocalBadge) return null;
+  if (props.source === "local" || props.source === "streaming") return null;
+  return buildLocalMatchIndex(libraryStore.tracks);
+});
+
+/**
+ * 该行是否已存在于本地音乐库
+ * @param track - 当前行曲目
+ */
+const localMatchOf = (track: Track): Track | null =>
+  localIndex.value ? findLocalMatch(localIndex.value, track) : null;
 
 /** 专辑是否可跳转：本地不要求 id，其他源需要 album.id */
 const isAlbumLinkable = (item: Track): boolean => {
@@ -161,37 +185,12 @@ const filteredItems = computed(() => {
   });
 });
 
-/** 排序后列表 */
-const sortedItems = computed(() => {
-  if (!props.enableSort || sortField.value === "none") return filteredItems.value;
-  const result = [...filteredItems.value];
-  const field = sortField.value;
-  const direction = sortOrder.value === "asc" ? 1 : -1;
-
-  const toArtistText = (track: Track): string => track.artists.map((a) => a.name).join(" / ");
-  const toAlbumText = (track: Track): string => track.album?.name ?? "";
-  const toPathText = (track: Track): string => track.path ?? "";
-
-  const compare = (a: Track, b: Track): number => {
-    let value = 0;
-    if (field === "title") value = textCollator.compare(a.title, b.title);
-    else if (field === "artist") value = textCollator.compare(toArtistText(a), toArtistText(b));
-    else if (field === "album") value = textCollator.compare(toAlbumText(a), toAlbumText(b));
-    else if (field === "path") value = textCollator.compare(toPathText(a), toPathText(b));
-    else if (field === "duration") value = a.duration - b.duration;
-    else if (field === "size") value = (a.fileSize ?? 0) - (b.fileSize ?? 0);
-    else if (field === "mtime") value = (a.mtime ?? 0) - (b.mtime ?? 0);
-    else if (field === "ctime") value = (a.ctime ?? 0) - (b.ctime ?? 0);
-    else /*(field === "track")*/ value = (a.track ?? 0) - (b.track ?? 0);
-    if (value !== 0) return value * direction;
-    const fallback = textCollator.compare(a.title, b.title);
-    if (fallback !== 0) return fallback;
-    return textCollator.compare(a.id, b.id);
-  };
-
-  result.sort(compare);
-  return result;
-});
+/** 排序后列表（与播放全部共用同一套排序规则） */
+const sortedItems = computed(() =>
+  props.enableSort
+    ? sortTracks(filteredItems.value, sortField.value, sortOrder.value)
+    : filteredItems.value,
+);
 
 /** 当前播放歌曲在过滤后列表中的索引 */
 const playingIndex = computed(() => {
@@ -241,6 +240,10 @@ const {
 const tagEditorOpen = ref(false);
 const tagEditorTrack = shallowRef<Track | null>(null);
 
+/** 手动换源弹窗 */
+const sourceSwitchOpen = ref(false);
+const sourceSwitchTrack = shallowRef<Track | null>(null);
+
 /** 下载 */
 const { enqueue: enqueueDownload } = useDownload();
 
@@ -254,6 +257,10 @@ const { items: contextMenuItems, handleSelect: onContextMenu } = useTrackMenu(co
   onRemove: (track) => batch.requestDelete([track], "remove"),
   onDeleteFile: (track) => batch.requestDelete([track], "file"),
   onRemoveFromCloud: (track) => batch.requestDelete([track], "cloud"),
+  onSwitchSource: (track) => {
+    sourceSwitchTrack.value = track;
+    sourceSwitchOpen.value = true;
+  },
   onEditTags: (track) => {
     tagEditorTrack.value = track;
     tagEditorOpen.value = true;
@@ -442,7 +449,8 @@ defineExpose({
             <!-- 普通模式 -->
             <div
               v-else
-              class="flex items-center gap-3 pl-3 pr-6 mx-3 h-10 text-sm text-on-surface-variant/60"
+              class="flex items-center gap-3 pl-3 mx-3 h-10 text-sm text-on-surface-variant/60"
+              :class="showSize ? 'pr-14' : 'pr-6'"
             >
               <div v-if="showIndex" class="w-8 shrink-0 flex items-center justify-center">
                 <span>#</span>
@@ -515,16 +523,17 @@ defineExpose({
           <div class="px-3 pb-3">
             <div
               data-song-item
-              class="group flex items-center gap-3 pl-3 pr-6 h-19 rounded-xl cursor-pointer border-2 border-solid transition-[background-color,border-color] duration-200"
-              :class="
+              class="group flex items-center gap-3 pl-3 h-19 rounded-xl cursor-pointer border-2 border-solid transition-[background-color,border-color] duration-200"
+              :class="[
+                showSize ? 'pr-14' : 'pr-6',
                 batch.active.value
                   ? batch.selectedIds.value.has(item.id)
                     ? 'bg-primary/10 border-primary/30'
                     : 'bg-surface-panel border-primary/12 hover:border-primary/20 hover:bg-on-surface/5'
                   : playingId === item.id
                     ? 'bg-primary/16 border-primary/40'
-                    : 'bg-surface-panel border-primary/12 hover:border-primary/30 hover:bg-on-surface/8 active:bg-on-surface/12'
-              "
+                    : 'bg-surface-panel border-primary/12 hover:border-primary/30 hover:bg-on-surface/8 active:bg-on-surface/12',
+              ]"
               @click="batch.active.value ? batch.toggle(item.id) : undefined"
               @dblclick="onTrackDblClick(item, index)"
               @contextmenu="contextTrack = item"
@@ -612,25 +621,26 @@ defineExpose({
                     :class="playingId === item.id ? 'text-primary/70' : 'text-on-surface-variant'"
                   >
                     <span
-                      v-if="item.quality && !settings.preset.hideQualityTag"
-                      class="shrink-0 px-1 rounded text-[10px] leading-[18px] font-bold border border-solid"
-                      :class="
-                        isLosslessQuality(item.quality)
-                          ? 'text-amber-500 border-amber-500/40'
-                          : 'text-on-surface-variant border-on-surface-variant/40'
-                      "
+                      v-if="localMatchOf(item)"
+                      class="inline-flex h-[18px] shrink-0 items-center rounded px-1 text-[10px] font-bold leading-none text-sky-500 ring-1 ring-inset ring-sky-500/35 dark:text-sky-300 dark:ring-sky-300/40"
+                      :title="t('songList.localExists')"
                     >
-                      {{ getQualityLabel(item.quality) }}
+                      {{ t("songList.localExists") }}
                     </span>
+                    <QualityTag
+                      v-if="item.quality && !settings.preset.hideQualityTag"
+                      :level="getQualityLevel(item.quality)"
+                      class="h-[18px]"
+                    />
                     <span
                       v-if="item.fee === 1 && !settings.preset.hideVipTag"
-                      class="shrink-0 px-1 rounded text-[10px] leading-[18px] font-bold border border-solid text-red-400 border-red-400/40"
+                      class="inline-flex h-[18px] shrink-0 items-center rounded border border-solid border-red-400/40 px-1 text-[10px] font-bold leading-none text-red-400"
                     >
                       VIP
                     </span>
                     <span
                       v-else-if="item.fee === 4 && !settings.preset.hideVipTag"
-                      class="shrink-0 px-1 rounded text-[10px] leading-[18px] font-bold border border-solid text-red-400 border-red-400/40"
+                      class="inline-flex h-[18px] shrink-0 items-center rounded border border-solid border-red-400/40 px-1 text-[10px] font-bold leading-none text-red-400"
                     >
                       EP
                     </span>
@@ -781,5 +791,7 @@ defineExpose({
     <PlaylistPickerDialog v-model:open="pickerOpen" :mode="pickerMode" :tracks="pickerTracks" />
     <!-- 编辑元数据 -->
     <TagEditorDialog v-model:open="tagEditorOpen" :track="tagEditorTrack" />
+    <!-- 手动换源 -->
+    <SourceSwitchDialog v-model:open="sourceSwitchOpen" :track="sourceSwitchTrack" />
   </div>
 </template>

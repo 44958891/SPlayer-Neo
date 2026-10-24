@@ -9,6 +9,8 @@ import type { Platform } from "@shared/types/platform";
 import * as netease from "./netease";
 import * as qqmusic from "./qqmusic";
 import * as kugou from "./kugou";
+import * as kuwo from "./kuwo";
+import * as migu from "./migu";
 
 /** 搜索结果通用 */
 export interface SearchResult<T> {
@@ -31,6 +33,8 @@ export const searchSongs = (
   if (platform === "netease") return netease.songs(keyword, offset, limit);
   if (platform === "qqmusic") return qqmusic.songs(keyword, offset, limit);
   if (platform === "kugou") return kugou.songs(keyword, offset, limit);
+  if (platform === "kuwo") return kuwo.songs(keyword, offset, limit);
+  if (platform === "migu") return migu.songs(keyword, offset, limit);
   return unsupported(platform, "songs");
 };
 
@@ -44,6 +48,8 @@ export const searchAlbums = (
   if (platform === "netease") return netease.albums(keyword, offset, limit);
   if (platform === "qqmusic") return qqmusic.albums(keyword, offset, limit);
   if (platform === "kugou") return kugou.albums(keyword, offset, limit);
+  if (platform === "kuwo") return kuwo.albums(keyword, offset, limit);
+  if (platform === "migu") return migu.albums(keyword, offset, limit);
   return unsupported(platform, "albums");
 };
 
@@ -57,6 +63,8 @@ export const searchArtists = (
   if (platform === "netease") return netease.artists(keyword, offset, limit);
   if (platform === "qqmusic") return qqmusic.artists(keyword, offset, limit);
   if (platform === "kugou") return kugou.artists(keyword, offset, limit);
+  if (platform === "kuwo") return kuwo.artists(keyword, offset, limit);
+  if (platform === "migu") return migu.artists(keyword, offset, limit);
   return unsupported(platform, "artists");
 };
 
@@ -70,5 +78,7 @@ export const searchPlaylists = (
   if (platform === "netease") return netease.playlists(keyword, offset, limit);
   if (platform === "qqmusic") return qqmusic.playlists(keyword, offset, limit);
   if (platform === "kugou") return kugou.playlists(keyword, offset, limit);
+  if (platform === "kuwo") return kuwo.playlists(keyword, offset, limit);
+  if (platform === "migu") return migu.playlists(keyword, offset, limit);
   return unsupported(platform, "playlists");
 };

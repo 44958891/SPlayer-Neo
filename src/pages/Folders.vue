@@ -17,8 +17,11 @@ import IconLucidePlay from "~icons/lucide/play";
 import IconLucideListChecks from "~icons/lucide/list-checks";
 import IconLucideListPlus from "~icons/lucide/list-plus";
 import IconLucideEllipsis from "~icons/lucide/ellipsis";
+import { sortTracks } from "@/utils/trackSort";
+import { useStatusStore } from "@/stores/status";
 
 const { t } = useI18n();
+const status = useStatusStore();
 const router = useRouter();
 const libraryStore = useLibraryStore();
 const playlistStore = usePlaylistStore();
@@ -92,7 +95,8 @@ const selectedTracks = computed<Track[]>(() => {
 
 const handlePlayAll = (): void => {
   if (selectedTracks.value.length === 0) return;
-  player.playFrom(selectedTracks.value, 0);
+  const ordered = sortTracks(selectedTracks.value, status.sortField, status.sortOrder);
+  player.playFrom(ordered, 0);
 };
 
 /** 文件夹创建为本地歌单 */

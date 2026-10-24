@@ -353,14 +353,16 @@ export interface DownloadSettings {
   dir: string | null;
   /** 下载音质 */
   quality: PluginQuality;
-  /** 模拟播放下载：网易云用播放接口替代下载接口，避免占用每日下载次数 */
-  usePlaybackForDownload: boolean;
   /** 文件名模板，支持 {artist} {title} {album}；不含子目录 */
   fileTemplate: string;
   /** 文件智能分类：按规则分子文件夹 */
   folderScheme: DownloadFolderScheme;
   /** 重名处理策略 */
   overwritePolicy: "rename" | "overwrite" | "skip";
+  /** 入队时检测下载目录已有同名音频则跳过下载 */
+  skipExistingLocal: boolean;
+  /** 同时下载的任务数（1~6） */
+  concurrency: number;
   /** 内嵌封面 */
   embedCover: boolean;
   /** 内嵌标题/艺术家/专辑等元信息 */

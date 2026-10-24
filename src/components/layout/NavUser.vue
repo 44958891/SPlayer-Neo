@@ -2,7 +2,9 @@
 import { useUserStore } from "@/stores/user";
 import { dialog } from "@/composables/useDialog";
 import { toast } from "@/composables/useToast";
+import { vipBadgeLabel } from "@/utils/vip";
 import vipImg from "@/assets/images/vip.png";
+import svipImg from "@/assets/images/svip.svg";
 import IconLucideListMusic from "~icons/lucide/list-music";
 import IconLucideDisc3 from "~icons/lucide/disc-3";
 import IconLucideUserRound from "~icons/lucide/user-round";
@@ -19,7 +21,8 @@ onMounted(() => {
   void user.fetchStatus();
 });
 
-const isVip = computed(() => !!user.profile?.vipType && user.profile.vipType !== 0);
+/** 会员徽标文案：超级会员 SVIP / 普通会员 CVIP / 未开通不显示，跟随账号 vipType */
+const vipLabel = computed((): string | null => vipBadgeLabel(user.profile?.vipType));
 
 /** 收藏计数 */
 const stats = computed(() => [
@@ -94,7 +97,12 @@ const handleLogout = async (): Promise<void> => {
         <span class="text-sm text-on-surface max-w-[7rem] truncate">
           {{ user.profile?.nickname || t("login.unknownUser") }}
         </span>
-        <img v-if="isVip" :src="vipImg" alt="VIP" class="h-4 shrink-0" />
+        <img
+          v-if="vipLabel"
+          :src="vipLabel === 'SVIP' ? svipImg : vipImg"
+          :alt="vipLabel"
+          class="h-4 shrink-0"
+        />
         <IconLucideChevronDown
           :class="[
             'size-3 text-on-surface-variant transition-transform duration-200',
@@ -120,14 +128,19 @@ const handleLogout = async (): Promise<void> => {
       <span class="w-full text-sm font-semibold text-on-surface text-center truncate">
         {{ user.profile?.nickname || t("login.unknownUser") }}
       </span>
-      <div v-if="user.level !== undefined || isVip" class="flex items-center gap-1.5">
+      <div v-if="user.level !== undefined || vipLabel" class="flex items-center gap-1.5">
         <span
           v-if="user.level !== undefined"
           class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold leading-none bg-amber-500/15 text-amber-600 dark:text-amber-400 tabular-nums"
         >
           Lv.{{ user.level }}
         </span>
-        <img v-if="isVip" :src="vipImg" alt="VIP" class="h-4 shrink-0" />
+        <img
+          v-if="vipLabel"
+          :src="vipLabel === 'SVIP' ? svipImg : vipImg"
+          :alt="vipLabel"
+          class="h-5 shrink-0"
+        />
       </div>
       <span
         v-if="user.profile?.signature"

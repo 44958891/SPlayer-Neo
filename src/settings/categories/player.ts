@@ -71,6 +71,9 @@ const playerCategory: SettingCategory = {
           type: "select",
           binding: { store: "settings", path: "player.songLevel" },
           options: [
+            { value: "jymaster", labelKey: "settings.songLevel.jymaster" },
+            { value: "sky", labelKey: "settings.songLevel.sky" },
+            { value: "jyeffect", labelKey: "settings.songLevel.jyeffect" },
             { value: "lq", labelKey: "settings.songLevel.lq" },
             { value: "sq", labelKey: "settings.songLevel.sq" },
             { value: "hq", labelKey: "settings.songLevel.hq" },

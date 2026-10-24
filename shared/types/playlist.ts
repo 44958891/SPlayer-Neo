@@ -53,6 +53,8 @@ export interface PlaylistApi {
   update: (id: string, input: PlaylistUpdateInput) => Promise<PlaylistSummary | null>;
   remove: (id: string) => Promise<void>;
   addTracks: (id: string, trackIds: string[]) => Promise<number>;
+  /** 添加曲目对象（支持在线曲目：写入 external_tracks 快照） */
+  addTrackObjects: (id: string, tracks: Track[]) => Promise<number>;
   removeTracks: (id: string, trackIds: string[]) => Promise<number>;
   importLegacy: (records: LegacyPlaylistRecord[]) => Promise<void>;
   clear: () => Promise<void>;

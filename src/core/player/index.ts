@@ -12,6 +12,7 @@ import { usePluginsStore } from "@/stores/plugins";
 import { useHistoryStore } from "@/stores/history";
 import { useLibraryStore } from "@/stores/library";
 import * as queue from "@/stores/queue";
+import * as shuffle from "./shuffle";
 import * as fm from "./fm";
 import * as playback from "@/services/playback";
 import * as lyricLoader from "@/services/lyric/loader";
@@ -772,9 +773,9 @@ export const playFrom = async (
   const isSameTrack = media.track?.id === items[idx]?.id;
   queue.setQueue(items, context);
   status.playIndex = idx;
+  // 播放列表顺序保持不动：随机开启时只开新一轮（当前曲记为已播），由 nextTrack 决定随机跳转
   if (status.shuffleMode === "on") {
-    queue.shuffleQueue(status.playIndex);
-    status.playIndex = 0;
+    shuffle.resetShuffleRound(items[idx]?.id);
   }
   if (isSameTrack) {
     if (!status.isPlaying) play();
@@ -908,15 +909,19 @@ export const nextTrack = async (autoPlay = true): Promise<void> => {
     return;
   }
   if (queue.queueLength.value === 0) return;
-  // 到末尾了
-  if (status.playIndex >= queue.queueLength.value - 1) {
-    if (status.shuffleMode === "on" && queue.queueLength.value > 1) {
-      // 重新洗牌产生新顺序，当前歌在 index 0，从 1 开始避免重复
-      queue.shuffleQueue(status.playIndex);
-      status.playIndex = 1;
-    } else {
-      status.playIndex = 0;
-    }
+  const settings = useSettingsStore();
+  if (status.shuffleMode === "on") {
+    // 随机：队列顺序不动，只随机决定下一首（一轮内不重复，播完自动开新一轮）
+    const next = shuffle.consumeShuffleNext(queue.queue.value, status.currentTrack?.id, {
+      skipKeywordsSongs: settings.preset.skipKeywordsSongs,
+      skipTrackKeywords: settings.preset.skipTrackKeywords,
+    });
+    if (!next) return;
+    shuffle.pushShuffleHistory(status.playIndex);
+    status.playIndex = next.index;
+  } else if (status.playIndex >= queue.queueLength.value - 1) {
+    // 到末尾了，回绕
+    status.playIndex = 0;
   } else {
     status.playIndex++;
   }
@@ -965,6 +970,11 @@ export const trySmartTransition = async (
     skipKeywordsSongs: settings.preset.skipKeywordsSongs,
     skipTrackKeywords: settings.preset.skipTrackKeywords,
     shuffleMode: status.shuffleMode,
+    shuffleNextIndex: shuffle.peekShuffleNext(
+      queue.queue.value,
+      status.currentTrack?.id,
+      settings.preset,
+    )?.index,
   });
   if (!candidate) return;
   const prepared = beginPreparedTransition(candidate.track, preparedId);
@@ -1014,6 +1024,10 @@ export const trySmartTransition = async (
       trackId: candidate.track.id,
       title: candidate.track.title,
     });
+    if (status.shuffleMode === "on") {
+      shuffle.pushShuffleHistory(oldIndex);
+      shuffle.markShufflePlayed(candidate.track.id);
+    }
     onTrackEnded(false);
     const stopAfterTrack = autoClose.onTrackEnded();
     status.playIndex = candidate.index;
@@ -1039,7 +1053,13 @@ export const playAtIndex = async (index: number): Promise<void> => {
   }
   // 退出 FM
   status.fmMode = false;
+  if (status.shuffleMode === "on") {
+    shuffle.pushShuffleHistory(status.playIndex);
+    shuffle.markShufflePlayed(status.currentTrack?.id);
+  }
   status.playIndex = index;
+  shuffle.markShufflePlayed(status.currentTrack?.id);
+  shuffle.invalidateShuffleIfUpcoming(status.currentTrack?.id);
   await loadTrack(status.currentTrack, status.currentPlaybackContext);
 };
 
@@ -1048,6 +1068,13 @@ export const prevTrack = async (): Promise<void> => {
   const status = useStatusStore();
   if (status.fmMode) return;
   if (queue.queueLength.value === 0) return;
+  if (status.shuffleMode === "on") {
+    // 随机：沿前进历史回退；没有历史（刚开随机）则回绕到末尾
+    const prev = shuffle.popShuffleHistory(queue.queueLength.value);
+    status.playIndex = prev ?? queue.queueLength.value - 1;
+    await loadTrack(status.currentTrack, status.currentPlaybackContext);
+    return;
+  }
   status.playIndex = status.playIndex > 0 ? status.playIndex - 1 : queue.queueLength.value - 1;
   await loadTrack(status.currentTrack, status.currentPlaybackContext);
 };
@@ -1110,17 +1137,11 @@ export const setShuffleMode = (mode: ShuffleMode): void => {
   if (status.shuffleMode === mode) return;
   status.shuffleMode = mode;
   if (mode === "on") {
-    // 洗牌，当前歌置顶
-    queue.shuffleQueue(status.playIndex);
-    status.playIndex = 0;
+    // 队列顺序保持不动：只开新一轮随机（当前曲记为已播），播放位置无需移动
+    shuffle.resetShuffleRound(status.currentTrack?.id);
   } else {
-    // 恢复原始顺序，定位到当前歌在原始队列中的位置
-    const track = status.currentTrack;
-    if (track) {
-      status.playIndex = queue.unshuffleQueue(track.id);
-    } else {
-      queue.unshuffleQueue("");
-    }
+    // 关闭随机：队列本来就是原始顺序，位置依旧正确，清掉随机历史即可
+    shuffle.clearShuffleHistory();
   }
   syncPlayMode();
   toast.info(i18n.global.t(`player.shuffleMode.${mode}`), { icon: false });
@@ -1135,6 +1156,7 @@ export const removeFromQueue = async (index: number): Promise<void> => {
   if (index < 0 || index >= queue.queueLength.value) return;
   const isCurrentPlaying = index === status.playIndex;
   queue.removeFromQueue(index);
+  shuffle.clearShuffleHistory();
   if (index < status.playIndex) {
     // 移除的在当前歌之前，索引前移
     status.playIndex--;
@@ -1198,6 +1220,7 @@ export const insertToQueue = (
   const safeAt = Math.max(0, Math.min(raw, len));
   queue.insertToQueue(item, safeAt, context);
   if (safeAt <= status.playIndex) status.playIndex++;
+  shuffle.clearShuffleHistory();
   return safeAt;
 };
 
@@ -1299,6 +1322,7 @@ export const playFiles = async (filePaths: string[]): Promise<void> => {
 export const moveInQueue = (fromIndex: number, toIndex: number): void => {
   const status = useStatusStore();
   queue.moveInQueue(fromIndex, toIndex);
+  shuffle.clearShuffleHistory();
   // 根据移动方向调整 playIndex
   if (status.playIndex === fromIndex) {
     status.playIndex = toIndex;

@@ -49,10 +49,17 @@ export interface DownloadRequest {
   /** 完整 TTML 文本 */
   ttmlText?: string;
   tagOptions: DownloadTagOptions;
-  /** 是否复用当前播放链接下载 */
-  usePlaybackForDownload: boolean;
   /** 内嵌歌词与 .lrc 的保存格式 */
   lyricFileFormat: DownloadLyricFormat;
+  /** 音质升级：覆盖下载目录，文件直接落到该绝对路径目录（不再套用文件夹分类规则） */
+  targetDir?: string;
+  /** 音质升级：下载成功后删除的本地原文件路径（失败不动原文件） */
+  replaceSourcePath?: string;
+  /**
+   * 音质升级：替换的显式质量下限
+   * 缺省时下限取自原文件探测结果；原文件已损坏（探测不出档位）时可用此字段强制要求目标档位
+   */
+  minLevel?: PluginQuality;
 }
 
 /** 主进程持有的下载任务 */
@@ -71,6 +78,12 @@ export interface DownloadTask {
   errorCode?: string;
   /** 写标签失败但音频已落盘 */
   tagWarning?: boolean;
+  /** 已探测实际文件音质并回填 track.quality（音质标签按文件真实信息显示） */
+  probed?: boolean;
+  /** 音质升级：落地目录与待删除的原文件（重试时原样带上） */
+  targetDir?: string;
+  replaceSourcePath?: string;
+  minLevel?: PluginQuality;
   createdAt: number;
   finishedAt?: number;
 }
@@ -89,20 +102,14 @@ export type DownloadResolution = Required<Pick<DownloadRequest, "url">> &
 /** 主进程 → 渲染层的解析请求载荷（轮到下载但缺少 URL 时下发） */
 export type DownloadResolvePayload = Pick<
   DownloadRequest,
-  | "taskId"
-  | "track"
-  | "qualityLevel"
-  | "tagOptions"
-  | "coverUrl"
-  | "usePlaybackForDownload"
-  | "lyricFileFormat"
+  "taskId" | "track" | "qualityLevel" | "tagOptions" | "coverUrl" | "lyricFileFormat"
 >;
 
 /** 入队结果；ok 为 false 时 reason 说明原因 */
 export interface EnqueueResult {
   ok: boolean;
-  /** queued=同曲同音质已在队列/下载中；downloaded=已下载过且文件仍在 */
-  reason?: "queued" | "downloaded";
+  /** queued=同曲同音质已在队列/下载中；downloaded=已下载过且文件仍在；existsLocal=下载目录已有同名音频 */
+  reason?: "queued" | "downloaded" | "existsLocal";
 }
 
 /** 渲染端下载 IPC 入口 */

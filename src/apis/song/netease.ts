@@ -19,6 +19,9 @@ export const songsByIds = async (ids: Array<string | number>): Promise<Track[]> 
 
 /** 项目音质档位 → 官方 song/url v1 的 level 参数 */
 const NETEASE_LEVEL: Record<QualityLevel, string> = {
+  jymaster: "jymaster",
+  sky: "sky",
+  jyeffect: "jyeffect",
   lq: "standard",
   sq: "higher",
   hq: "exhigh",
@@ -26,8 +29,21 @@ const NETEASE_LEVEL: Record<QualityLevel, string> = {
   "hi-res": "hires",
 };
 
+/** 官方 song/url v1 响应里的 level → 项目档位（用于识别接口实际下发的档位） */
+const NETEASE_LEVEL_TO_HOST: Record<string, QualityLevel> = {
+  standard: "lq",
+  higher: "sq",
+  exhigh: "hq",
+  lossless: "lossless",
+  hires: "hi-res",
+  jyeffect: "jyeffect",
+  sky: "sky",
+  jymaster: "jymaster",
+};
+
 export type NeteasePlayUrlResult =
-  { available: true; url: string; isTrial: boolean } | { available: false; errorCode: ErrorCode };
+  | { available: true; url: string; isTrial: boolean; level?: QualityLevel }
+  | { available: false; errorCode: ErrorCode };
 
 export interface NeteaseSessionRecovery {
   /** 发起请求前是否处于登录状态 */
@@ -45,9 +61,11 @@ export const classifyNeteasePlayUrl = (item: unknown): NeteasePlayUrlResult => {
   if (!item || typeof item !== "object") {
     return { available: false, errorCode: ErrorCode.NETEASE_UNAVAILABLE };
   }
-  const data = item as { url?: unknown; freeTrialInfo?: unknown; fee?: unknown };
+  const data = item as { url?: unknown; freeTrialInfo?: unknown; fee?: unknown; level?: unknown };
   if (typeof data.url === "string" && data.url) {
-    return { available: true, url: data.url, isTrial: data.freeTrialInfo != null };
+    const level =
+      typeof data.level === "string" ? NETEASE_LEVEL_TO_HOST[data.level.toLowerCase()] : undefined;
+    return { available: true, url: data.url, isTrial: data.freeTrialInfo != null, level };
   }
   const fee = Number(data.fee);
   if (fee === 1 || fee === 4) {

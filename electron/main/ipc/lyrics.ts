@@ -12,6 +12,8 @@ import { ipcMain, dialog } from "electron";
 import * as netease from "@main/apis/common/lyric/netease";
 import * as qqmusic from "@main/apis/common/lyric/qqmusic";
 import * as kugou from "@main/apis/common/lyric/kugou";
+import * as kuwo from "@main/apis/common/lyric/kuwo";
+import * as migu from "@main/apis/common/lyric/migu";
 import { fetchTTML } from "@main/apis/common/lyric/ttml";
 import { matchLocalTTML } from "@main/services/localLyricRepo";
 import { buildFingerprint, getMatchedId } from "@main/database/lyricMatchCache";
@@ -53,6 +55,10 @@ const resolveById = async (platform: Platform, id: string): Promise<LyricMatchRe
         return { ok: true, data: await qqmusic.getByPlatformId(id) };
       case "kugou":
         return { ok: true, data: await kugou.getByPlatformId(id) };
+      case "kuwo":
+        return { ok: true, data: await kuwo.getByPlatformId(id) };
+      case "migu":
+        return { ok: true, data: await migu.getByPlatformId(id) };
       default:
         return { ok: false, error: `unsupported platform: ${platform}` };
     }
@@ -72,6 +78,10 @@ const resolveByQuery = async (platform: Platform, track: Track): Promise<LyricMa
         return { ok: true, data: await qqmusic.getByQuery(track) };
       case "kugou":
         return { ok: true, data: await kugou.getByQuery(track) };
+      case "kuwo":
+        return { ok: true, data: await kuwo.getByQuery(track) };
+      case "migu":
+        return { ok: true, data: await migu.getByQuery(track) };
       default:
         return { ok: false, error: `unsupported platform: ${platform}` };
     }

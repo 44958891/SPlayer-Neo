@@ -6,13 +6,20 @@ import type { DropdownMenuItem } from "@/components/ui/SDropdownMenu.vue";
 import { useLibraryStore } from "@/stores/library";
 import SongList from "@/components/list/SongList.vue";
 import { formatFileSize } from "@/utils/format";
+import { sortTracks } from "@/utils/trackSort";
+import { useStatusStore } from "@/stores/status";
 import IconFolderOpen from "~icons/lucide/folder-open";
 import IconRefreshCw from "~icons/lucide/refresh-cw";
 import IconLucideListChecks from "~icons/lucide/list-checks";
+import IconLucideTrendingUp from "~icons/lucide/trending-up";
+import IconLucideTags from "~icons/lucide/tags";
+import QualityUpgradeDialog from "@/components/library/QualityUpgradeDialog.vue";
+import MetadataBackfillDialog from "@/components/library/MetadataBackfillDialog.vue";
 import * as player from "@/core/player";
 
 const { t } = useI18n();
 const libraryStore = useLibraryStore();
+const status = useStatusStore();
 const { tracks, scanDirs, scanning, scanProgress, initialized } = storeToRefs(libraryStore);
 
 const playbackContext = computed<PlaybackContext>(() => ({
@@ -43,10 +50,11 @@ const handleQuickAddFolder = async (): Promise<void> => {
   if (res.success) libraryStore.startScan(false);
 };
 
-// 播放全部
+// 播放全部：队列顺序跟随列表当前排序（标题/歌手/时长…），而不是曲库原始顺序
 const handlePlayAll = (): void => {
   if (tracks.value.length === 0) return;
-  player.playFrom(tracks.value, 0, playbackContext.value);
+  const ordered = sortTracks(tracks.value, status.sortField, status.sortOrder);
+  player.playFrom(ordered, 0, playbackContext.value);
 };
 
 // 扫描进度百分比
@@ -57,6 +65,12 @@ const scanPercent = computed(() => {
 
 // 目录管理弹窗
 const folderDialogOpen = ref(false);
+
+// 音质升级弹窗
+const upgradeDialogOpen = ref(false);
+
+// 封面/歌词补全弹窗
+const backfillDialogOpen = ref(false);
 
 const moreMenuItems = computed<DropdownMenuItem[]>(() => [
   { key: "batchManage", label: t("songList.batch.manage"), icon: IconLucideListChecks },
@@ -170,6 +184,28 @@ onUnmounted(() => {
               <IconLucideRefreshCw :class="{ 'animate-spin': scanning }" />
             </template>
           </SButton>
+          <SButton
+            variant="secondary"
+            circle
+            :disabled="tracks.length === 0"
+            :title="t('library.upgrade.title')"
+            @click="upgradeDialogOpen = true"
+          >
+            <template #icon>
+              <IconLucideTrendingUp />
+            </template>
+          </SButton>
+          <SButton
+            variant="secondary"
+            circle
+            :disabled="tracks.length === 0"
+            :title="t('library.backfill.title')"
+            @click="backfillDialogOpen = true"
+          >
+            <template #icon>
+              <IconLucideTags />
+            </template>
+          </SButton>
           <SDropdownMenu :items="moreMenuItems" align="start" @select="handleMoreMenu">
             <template #trigger>
               <SButton variant="secondary" circle>
@@ -226,5 +262,9 @@ onUnmounted(() => {
     >
       <FolderManager @added="handleFolderAdded" />
     </SDialog>
+    <!-- 音质升级 -->
+    <QualityUpgradeDialog v-model:open="upgradeDialogOpen" />
+    <!-- 封面/歌词补全 -->
+    <MetadataBackfillDialog v-model:open="backfillDialogOpen" />
   </div>
 </template>

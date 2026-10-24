@@ -23,8 +23,6 @@ const appearanceCategory: SettingCategory = {
             { value: "system", labelKey: "settings.themeMode.system" },
           ],
           defaultValue: "system",
-          // 图片背景下强制暗色，禁用此开关
-          disabled: () => useThemeStore().appearanceStyle === "image",
         },
         {
           key: "themeSource",

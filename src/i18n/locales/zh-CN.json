@@ -18,14 +18,26 @@
     "finish": "完成",
     "footer": "可随时在「设置」中调整本次未配置的内容",
     "welcome": {
-      "title": "欢迎使用 SPlayer-Next",
+      "title": "欢迎使用 SPlayer Neo",
       "subtitle": "一个现代化的桌面音乐播放器，完成几步设置即可开始享用",
       "start": "开始设置",
       "features": {
-        "local": { "title": "本地音乐库", "desc": "扫描本地目录，自动整理音乐库" },
-        "quality": { "title": "无损音质", "desc": "原生音频引擎，支持多种无损格式" },
-        "streaming": { "title": "流媒体服务器", "desc": "Subsonic / Jellyfin / Emby 等" },
-        "lyrics": { "title": "丰富歌词体验", "desc": "AMLL 逐字歌词，桌面歌词、灵动岛、任务栏歌词" }
+        "local": {
+          "title": "本地音乐库",
+          "desc": "扫描本地目录，自动整理音乐库"
+        },
+        "quality": {
+          "title": "无损音质",
+          "desc": "原生音频引擎，支持多种无损格式"
+        },
+        "streaming": {
+          "title": "流媒体服务器",
+          "desc": "Subsonic / Jellyfin / Emby 等"
+        },
+        "lyrics": {
+          "title": "丰富歌词体验",
+          "desc": "AMLL 逐字歌词，桌面歌词、灵动岛、任务栏歌词"
+        }
       }
     },
     "agreement": {
@@ -37,11 +49,11 @@
     },
     "library": {
       "title": "本地音乐库",
-      "subtitle": "添加要扫描的音乐文件夹，SPlayer-Next 会自动建立曲库索引。可以添加多个目录，也可以之后再添加"
+      "subtitle": "添加要扫描的音乐文件夹，SPlayer Neo 会自动建立曲库索引。可以添加多个目录，也可以之后再添加"
     },
     "streaming": {
       "title": "流媒体服务器",
-      "subtitle": "SPlayer-Next 支持连接 Subsonic 兼容服务和 Jellyfin / Emby，让你的家庭音乐服务器与播放器无缝集成",
+      "subtitle": "SPlayer Neo 支持连接 Subsonic 兼容服务和 Jellyfin / Emby，让你的家庭音乐服务器与播放器无缝集成",
       "hint": "完成引导后，前往「设置 → 媒体源配置 → 流媒体管理」即可添加服务器并测试连接",
       "servers": {
         "subsonic": "Subsonic 兼容",
@@ -59,7 +71,7 @@
     },
     "hotkeys": {
       "title": "快捷键",
-      "subtitle": "SPlayer-Next 内置了完整的播放控制快捷键，需要时随时调用",
+      "subtitle": "SPlayer Neo 内置了完整的播放控制快捷键，需要时随时调用",
       "tips": {
         "global": {
           "title": "全局快捷键",
@@ -508,6 +520,7 @@
   },
   "songList": {
     "title": "标题",
+    "localExists": "本地已有",
     "album": "专辑",
     "actions": "操作",
     "size": "大小",
@@ -589,7 +602,31 @@
     "clearList": "清空列表",
     "locateCurrent": "当前播放",
     "clearConfirmTitle": "清空播放列表",
-    "clearConfirmContent": "确认清空全部播放列表吗？此操作不可撤销！"
+    "clearConfirmContent": "确认清空全部播放列表吗？此操作不可撤销！",
+    "import": {
+      "title": "导入歌单",
+      "description": "粘贴各平台歌单分享链接，每行一个。支持网易云（含 163cn.tv 短链）、QQ音乐、酷狗、酷我；导入的曲目会保存为在线歌单曲目，可直接播放。",
+      "placeholder": "https://music.163.com/playlist?id=123456789\nhttps://y.qq.com/n/ryqq/playlist/7524...\n或直接粘贴歌单 ID（按下方平台归属）",
+      "fallbackPlatform": "纯 ID 归属平台",
+      "start": "开始导入",
+      "importing": "导入中...",
+      "menuEntry": "导入歌单",
+      "defaultTitle": "导入的歌单",
+      "errorParse": "无法识别的链接",
+      "errorEmpty": "歌单为空或全部曲目不可用",
+      "doneLine": "已导入 {count} 首",
+      "toastOk": "成功导入 {count} 个歌单",
+      "toastPartial": "导入完成：成功 {ok} 个，失败 {failed} 个",
+      "toastFail": "全部导入失败"
+    },
+    "switchSource": {
+      "title": "切换播放源",
+      "placeholder": "标题 歌手",
+      "noResult": "无结果",
+      "original": "原曲",
+      "playing": "正在播放",
+      "toast": "已切换播放源"
+    }
   },
   "liked": {
     "title": "我喜欢的音乐",
@@ -667,6 +704,8 @@
     "resolveFailed": "无法下载：{title}",
     "alreadyQueued": "该歌曲已在下载队列",
     "alreadyDownloaded": "该歌曲已下载",
+    "alreadyLocal": "本地已有同名文件：{title}",
+    "upgradeTag": "升级",
     "started": "已加入下载：{title}",
     "enqueued": "已加入 {count} 首下载",
     "status": {
@@ -711,7 +750,66 @@
     "foldersDescription": "文件夹内歌曲增删自动同步",
     "removeFolder": "移除此目录",
     "removeFolderConfirm": "移除该目录后，其中的歌曲将从音乐库中删除！",
-    "nestedHint": "该目录与已添加目录嵌套，已自动跳过"
+    "nestedHint": "该目录与已添加目录嵌套，已自动跳过",
+    "upgrade": {
+      "title": "音质升级",
+      "description": "扫描本地曲库中低于目标档位的文件，在多平台匹配同名更高音质版本，下载后替换原文件。",
+      "sourceAll": "全部平台",
+      "sourceNetease": "网易云",
+      "sourceQq": "QQ音乐",
+      "sourceKugou": "酷狗",
+      "sourceKuwo": "酷我",
+      "sourceMigu": "咪咕",
+      "start": "开始检测",
+      "resume": "继续检测（剩余 {count} 首）",
+      "rescan": "重新检测",
+      "stop": "停止",
+      "hint": "检测按平台节奏串行请求，遇到限流会自动降速；下载完成后会校验音质，未达标的文件会保留原文件。",
+      "scanning": "正在检测 {scanned}/{total}",
+      "matched": "匹配成功 {count}",
+      "unmatched": "无匹配 {count}",
+      "failed": "请求失败 {count}",
+      "enqueued": "已加入下载队列，可在「下载管理」查看进度",
+      "noMatch": "无匹配",
+      "none": "没有找到可升级的曲目",
+      "selectAll": "全选",
+      "upgradeBtn": "升级所选（{count}）",
+      "aborted": "检测已中断，可稍后继续",
+      "enqueueFailed": "加入下载队列失败",
+      "doneToast": "已完成 {count} 首音质升级",
+      "failedToast": "{count} 首升级失败，原文件已保留"
+    },
+    "backfill": {
+      "title": "封面与歌词补全",
+      "description": "扫描本地曲库中缺少内嵌封面或歌词的文件，按标题、歌手、时长匹配在线同名曲，把封面与歌词写回文件标签。",
+      "optCover": "补封面",
+      "optLyric": "补歌词",
+      "start": "开始扫描",
+      "again": "重新扫描",
+      "stop": "停止",
+      "hint": "只补缺失项，不覆盖文件里已有的封面与歌词；写入失败不会影响原文件。",
+      "phaseScan": "正在读取本地曲目…",
+      "phaseMatch": "正在匹配：{current}",
+      "phaseWrite": "正在写入标签…",
+      "summaryTotal": "共 {count} 首",
+      "summaryWritten": "已写入 {count}",
+      "summaryNone": "无匹配 {count}",
+      "summaryFailed": "失败 {count}",
+      "tagCover": "封面",
+      "tagLyric": "歌词",
+      "noMatch": "无匹配",
+      "idle": "点击「开始扫描」查找缺少封面或歌词的曲目",
+      "nothingMissing": "所有曲目都已有封面与歌词",
+      "selectAll": "全选",
+      "writeBtn": "写入所选（{count}）",
+      "aborted": "已停止",
+      "emptyLibrary": "音乐库为空，请先扫描本地目录",
+      "readFailed": "读取本地曲目失败",
+      "noneMatched": "没有匹配到可补全的曲目",
+      "writeFailed": "写入失败",
+      "doneToast": "已补全 {count} 首",
+      "failedToast": "{count} 首补全失败"
+    }
   },
   "settings": {
     "title": "设置",
@@ -781,6 +879,7 @@
       "songCache": "歌曲缓存",
       "cache": "缓存管理",
       "database": "数据库管理",
+      "backup": "歌单备份",
       "downloadLocation": "下载配置",
       "downloadGeneral": "下载选项",
       "downloadTags": "写入内容",
@@ -892,7 +991,10 @@
       "sq": "较高 (SQ)",
       "hq": "极高 (HQ)",
       "lossless": "无损 (Lossless)",
-      "hi-res": "高解析度无损 (Hi-Res)"
+      "hi-res": "高解析度无损 (Hi-Res)",
+      "jyeffect": "环绕声 (JYEffect)",
+      "sky": "空间音频 (Sky)",
+      "jymaster": "母带 (Master)"
     },
     "allowTrialPlay": {
       "label": "允许播放试听",
@@ -963,6 +1065,8 @@
       "auto": "智能选择",
       "qqmusic": "优先 QM",
       "kugou": "优先 KG",
+      "kuwo": "优先 KW",
+      "migu": "优先 MG",
       "netease": "优先 NCM",
       "self": "跟随自身"
     },
@@ -1989,6 +2093,26 @@
         "disabled": "已禁用",
         "unloaded": "未加载"
       },
+      "check": {
+        "entry": "音源体检",
+        "title": "音源体检",
+        "description": "逐个插件、逐个音质档位实际取链并探测，找出失效或不匹配的音源组合，结果用于播放时自动避让。",
+        "start": "开始体检",
+        "again": "重新体检",
+        "stop": "停止",
+        "clearRecords": "清空体检记录",
+        "hint": "体检会对每个插件与音质档位各发一次取链请求，耗时较长；已确认失效的组合会被记住并在下次取链时跳过。",
+        "idle": "点击「开始体检」检查当前插件的音源可用性",
+        "empty": "没有可体检的插件，请先安装并启用音源插件",
+        "stopped": "体检已停止",
+        "done": "体检完成，共 {count} 项",
+        "recordsCleared": "已清空 {count} 条体检记录",
+        "summaryOk": "正常 {count}",
+        "summaryMismatch": "档位不符 {count}",
+        "summaryHard": "失效 {count}",
+        "summarySoft": "超时 {count}",
+        "summaryUnsupported": "不支持 {count}"
+      },
       "sectionSource": "音源插件",
       "sectionControl": "控制插件",
       "detail": {
@@ -2014,9 +2138,18 @@
         "homepage": "主页"
       },
       "grant": {
-        "network": { "label": "联网", "desc": "插件可发起网络请求" },
-        "control": { "label": "控制", "desc": "插件可控制播放器" },
-        "ui": { "label": "界面", "desc": "插件可扩展或修改应用界面" }
+        "network": {
+          "label": "联网",
+          "desc": "插件可发起网络请求"
+        },
+        "control": {
+          "label": "控制",
+          "desc": "插件可控制播放器"
+        },
+        "ui": {
+          "label": "界面",
+          "desc": "插件可扩展或修改应用界面"
+        }
       }
     },
     "pluginManager": {
@@ -2041,6 +2174,20 @@
     "dbCacheManager": {
       "label": "数据库管理",
       "description": "查看数据库占用并清理"
+    },
+    "playlistBackup": {
+      "label": "歌单备份",
+      "description": "备份全部本地歌单为 JSON（含在线曲目快照），可导入恢复；也可把单个歌单导出为 m3u8 播放列表文件。",
+      "emptyPlaylists": "没有可导出的歌单",
+      "invalidFile": "文件内容不是有效的歌单备份",
+      "exportJson": "导出全部歌单",
+      "importJson": "导入歌单备份",
+      "exportM3u": "导出 m3u8",
+      "pickPlaylist": "选择要导出的歌单",
+      "exported": "已保存到 {path}",
+      "m3uExportedSkipped": "已保存到 {path}（{skipped} 首在线曲目以占位注释写入）",
+      "imported": "导入",
+      "importedSummary": "已导入 {playlists} 个歌单，共 {tracks} 首"
     },
     "cacheDir": {
       "label": "缓存目录",
@@ -2117,6 +2264,14 @@
       "rename": "保留两者（加序号）",
       "overwrite": "覆盖",
       "skip": "跳过"
+    },
+    "downloadSkipExisting": {
+      "label": "跳过本地已有歌曲",
+      "description": "下载目录中已存在同名音频文件时不再重复下载"
+    },
+    "downloadConcurrency": {
+      "label": "同时下载数",
+      "description": "同时进行的下载任务数量，网络较差时建议保持 1"
     },
     "downloadEmbedCover": {
       "label": "内嵌封面",
@@ -2288,6 +2443,9 @@
     "TAG_WRITE_FAILED": "写入标签失败",
     "MAX_CONSECUTIVE_FAILURES": "连续播放失败次数过多",
     "UNKNOWN": "操作失败"
+  },
+  "song": {
+    "unknownArtist": "未知歌手"
   },
   "tagEditor": {
     "title": "编辑元数据",

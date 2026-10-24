@@ -11,6 +11,7 @@ import SongList from "@/components/list/SongList.vue";
 import * as player from "@/core/player";
 import IconLucideListChecks from "~icons/lucide/list-checks";
 import IconLucideRefreshCw from "~icons/lucide/refresh-cw";
+import { sortTracks } from "@/utils/trackSort";
 
 const { t } = useI18n();
 const library = useLibraryStore();
@@ -74,7 +75,8 @@ const playbackContext = computed<PlaybackContext | undefined>(() => {
 
 const handlePlayAll = (): void => {
   if (currentTracks.value.length === 0) return;
-  player.playFrom(currentTracks.value, 0, playbackContext.value);
+  const ordered = sortTracks(currentTracks.value, status.sortField, status.sortOrder);
+  player.playFrom(ordered, 0, playbackContext.value);
 };
 
 onMounted(() => {
@@ -213,6 +215,7 @@ const handleMoreMenu = (key: string): void => {
           :items="user.likedPlaylistTracks"
           :search-query="searchQuery"
           source="netease"
+          show-local-badge
           :collection-id="user.likedPlaylistId ?? undefined"
           :playback-context="playbackContext"
           collection-type="playlist"

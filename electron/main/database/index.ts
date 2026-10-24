@@ -159,6 +159,13 @@ export const initDatabase = (): void => {
     CREATE INDEX IF NOT EXISTS idx_playlist_tracks_position
       ON playlist_tracks(playlist_id, position);
 
+    CREATE TABLE IF NOT EXISTS external_tracks (
+      id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      data TEXT NOT NULL,
+      added_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS remote_tracks (
       server_id TEXT NOT NULL,
       remote_id TEXT NOT NULL,
