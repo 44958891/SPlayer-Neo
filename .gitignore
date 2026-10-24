@@ -1,7 +1,8 @@
 node_modules
 dist
 out
-build
+# 安装器协议文本由 scripts/gen-license.ts 在打包前生成
+build/license.txt
 .DS_Store
 .eslintcache
 .claude

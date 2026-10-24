@@ -11,6 +11,15 @@
 
 ---
 
+## 仓库与 CI 调整（2026-10-25）
+
+- 移除上游的 `nightly.yml`：它写死 `ref: dev`，本仓库只有 `main`，每次定时触发都失败；且本项目的版本节奏是 beta 累积，不需要每夜滚动包。同时删除仅它使用的 `scripts/gen-nightly-version.cjs`、`gen-nightly-notes.cjs`
+- 移除 `dev.yml`：上游「dev 每次推送都构建 3 平台」的流水线，本仓库没有该分支
+- `ci.yml` / `test.yml` / `docs.yml` 的触发分支从 `dev` 改为 `main`
+- **修复 CI 打包失败**：`.gitignore` 原先把整个 `build` 目录忽略掉，导致 `build/installer.nsh`（自定义安装页）从未入库，GitHub Actions 打包时报 `cannot find specified resource "build/installer.nsh"`。现将该文件纳入版本控制，`build/license.txt` 仍由 `scripts/gen-license.ts` 打包前生成并保持忽略
+
+---
+
 ## 版本号规则
 
 正式版之间用 beta 累积，攒够一轮改动再提升为下一个正式版：`1.0.0` → `1.1.0-beta.1` → … → `1.1.0-beta.10` → `1.1.0`。

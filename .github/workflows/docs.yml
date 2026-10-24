@@ -3,7 +3,7 @@ name: Deploy VitePress site to Pages
 
 on:
   push:
-    branches: [dev]
+    branches: [main]
     paths:
       - "docs/**"
       - "package.json"
