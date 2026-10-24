@@ -1,12 +1,33 @@
-# SPlayer-Next 定制版更新日志
+# SPlayer Neo 更新日志
 
-本仓库是 [SPlayer-Next](https://github.com/SPlayer-Dev/SPlayer-Next) 的本地定制分支（AGPL-3.0），记录从 1.1.0 起的所有功能新增与修复。
+本仓库是 [SPlayer-Next](https://github.com/SPlayer-Dev/SPlayer-Next) 的定制分支 **SPlayer Neo**（AGPL-3.0），记录从上游 1.2.0-beta.35 分叉后的全部改动。
 
+- 仓库：https://github.com/44958891/SPlayer-Neo
 - 安装包目录：`D:\Download\SPlayer-Next-Mod\`
 - 源码工作区：`D:\BaiduNetdiskDownload\zcode\SPlayer-Next`
-- 当前最新：**1.2.0-beta.35**（2026-10-23）
+- 当前最新：**1.0.0**（2026-10-24）
 
 > 说明：每个版本的"新增/修复"条目均按当期 asar 产物内的特征标记核验过（见文末核验方法），不是仅凭记录推断。
+
+---
+
+## 1.0.0（2026-10-24）— SPlayer Neo 首个正式版
+
+从上游 SPlayer-Next 1.2.0-beta.35 分叉，作为「SPlayer Neo」定制发行版的第一个正式版本发布。
+
+**定版说明**
+
+- 版本号独立为 `1.0.0`，不再跟随上游 beta 序列；后续定制版沿用 1.x
+- 界面与安装包显示「SPlayer Neo」，程序内部标识（productName / appId / 安装目录 / 用户数据目录）仍沿用 SPlayer-Next，**从旧版覆盖安装不会丢失配置、歌单与缓存**
+- 更新检查、贡献者列表指向 `44958891/SPlayer-Neo`
+
+**本版内容**（相对上游 1.2.0-beta.35 的全部定制）
+
+- 音源：新增咪咕（MG）与酷我（KW）完整接入；音源体检；下载预探针；手动换源
+- 播放：随机播放重构（队列顺序不动）；播放全部跟随列表排序
+- 曲库：歌单链接导入、歌单 JSON/m3u8 备份、音质升级、封面歌词补全、本地已有标注
+- 界面：全站小标签统一尺寸与基线
+- 工程：i18n 守卫测试并接入 build/CI
 
 ---
 
