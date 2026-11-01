@@ -5,9 +5,25 @@
 - 仓库：https://github.com/44958891/SPlayer-Neo
 - 安装包目录：`D:\Download\SPlayer-Next-Mod\`
 - 源码工作区：`D:\BaiduNetdiskDownload\zcode\SPlayer-Next`
-- 当前最新：**1.0.0**（2026-10-24）
+- 当前最新：**1.1.0-beta.1**（2026-11-01）
 
 > 说明：每个版本的"新增/修复"条目均按当期 asar 产物内的特征标记核验过（见文末核验方法），不是仅凭记录推断。
+
+---
+
+## 1.1.0-beta.1（2026-11-01）— 修复无损文件被存成 .mp3
+
+**修复**
+
+- 下载 Master / 无损音质时，文件内容确实是 FLAC，扩展名却是 `.mp3`，文件管理器与播放器显示的格式与实际内容不符
+- 根因：`resolveExtension` 的优先级是「插件声明格式 → Content-Type → URL 后缀 → 兜底 mp3」。插件取链时不返回 `declaredFormat`，CDN 的 `Content-Type` 又常常一律给 `audio/mpeg`，于是永远落到 `.mp3`
+- 改为以**解码器实测的编解码器**为准命名：下载完成后先探测真实音频流（flac/alac/mp3/aac/vorbis/opus/ape/wavpack/pcm…），再据此决定最终扩展名；探测失败才回退旧逻辑
+- `skip` 策略同步修正：原来只按「声明格式猜的扩展名」判断是否已存在，现在遍历全部已知音频扩展名探测，避免换了扩展名后重复下载
+
+**验证**
+
+- 单测 `electron/main/utils/filename.spec.ts` 6 条（无损/有损/PCM/大小写/未知编解码器 + 原优先级回退）
+- 本地库中 6 个误命名的 `.mp3`（实测均为 FLAC 192kHz/24bit）已就地改回 `.flac`，无同名冲突、无伴生歌词文件
 
 ---
 

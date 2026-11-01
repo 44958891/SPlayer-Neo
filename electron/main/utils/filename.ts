@@ -75,6 +75,22 @@ export const dedupePath = (pathWithoutExt: string, ext: string): string => {
   return target;
 };
 
+/**
+ * 在已知音频扩展名中查找已存在的同名文件
+ *
+ * skip 策略下无法预知真实扩展名（实测编解码器要等下载完才知道），
+ * 逐个扩展名探测才能可靠命中「已经下载过」的文件。
+ * @param pathWithoutExt - 不含扩展名的完整路径
+ * @returns 已存在的文件路径，未命中返回 null
+ */
+export const findExistingAudio = (pathWithoutExt: string): string | null => {
+  for (const ext of KNOWN_EXTS) {
+    const candidate = `${pathWithoutExt}${ext}`;
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+};
+
 /** Content-Type → 扩展名（含点） */
 const MIME_EXT: Record<string, string> = {
   "audio/flac": ".flac",
@@ -103,6 +119,44 @@ const KNOWN_EXTS = new Set([
   ".wv",
   ".aiff",
 ]);
+
+/**
+ * 编解码器 → 扩展名
+ *
+ * 编解码器由解码器实测得出，是扩展名唯一可信的来源：
+ * 音源声明的格式常缺失，CDN 的 Content-Type 经常一律给 audio/mpeg，
+ * URL 后缀也不可靠（无损文件挂在 .mp3 路径下）。三者任一优先都会让
+ * 母带/无损文件落成 .mp3，播放器与文件管理器显示的格式与内容不符。
+ */
+const CODEC_EXT: Record<string, string> = {
+  flac: ".flac",
+  alac: ".m4a",
+  mp3: ".mp3",
+  mp2: ".mp3",
+  aac: ".aac",
+  vorbis: ".ogg",
+  opus: ".opus",
+  wav: ".wav",
+  ape: ".ape",
+  wavpack: ".wv",
+  aiff: ".aiff",
+  tta: ".tta",
+  dsd: ".dsf",
+};
+
+/**
+ * 由实测编解码器推断扩展名（含点）
+ * @param codec - 解码器报告的编解码器名（如 flac / mp3 / pcm_s16le）
+ * @returns 扩展名；无法识别时返回 null，由调用方回退
+ */
+export const extFromCodec = (codec: string | undefined | null): string | null => {
+  if (!codec) return null;
+  const key = codec.trim().toLowerCase();
+  if (CODEC_EXT[key]) return CODEC_EXT[key];
+  // PCM 家族（wav 容器内的裸流）统一落 .wav
+  if (key.startsWith("pcm_")) return ".wav";
+  return null;
+};
 
 /**
  * 推断下载文件扩展名（含点）

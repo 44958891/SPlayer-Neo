@@ -16,7 +16,13 @@ import { broadcast } from "@main/utils/broadcast";
 import { downloadLog } from "@main/utils/logger";
 import { getEngine } from "@main/services/engine";
 import { fetchBytes } from "@main/utils/fetchBytes";
-import { renderDownloadPath, dedupePath, resolveExtension } from "@main/utils/filename";
+import {
+  renderDownloadPath,
+  dedupePath,
+  resolveExtension,
+  extFromCodec,
+  findExistingAudio,
+} from "@main/utils/filename";
 import { levelMeets, levelOfQuality, type QualityLevel } from "@shared/utils/quality";
 import * as db from "@main/database/downloads";
 import { ErrorCode } from "@shared/types/errors";
@@ -355,14 +361,16 @@ const runTask = async (
     // 升级任务强制覆盖写：目标位可能正是待替换的原文件
     const policy = req.replaceSourcePath ? "overwrite" : store.get("download.overwritePolicy");
 
-    // skip 策略：用预估扩展名提前命中已存在文件则跳过
-    const guessExt = resolveExtension(req.declaredFormat, null, audioUrl);
-    if (policy === "skip" && fs.existsSync(`${finalNoExt}${guessExt}`)) {
-      task.status = "done";
-      task.filePath = `${finalNoExt}${guessExt}`;
-      task.finishedAt = Date.now();
-      broadcastState(task);
-      return;
+    // skip 策略：同名文件可能因实测编解码器而落在不同扩展名下，逐个探测
+    if (policy === "skip") {
+      const existing = findExistingAudio(finalNoExt);
+      if (existing) {
+        task.status = "done";
+        task.filePath = existing;
+        task.finishedAt = Date.now();
+        broadcastState(task);
+        return;
+      }
     }
 
     await fsp.mkdir(tmpDir(), { recursive: true });
@@ -403,7 +411,11 @@ const runTask = async (
     const quality = await verifyDownloadCandidate(partWithExt, originalLevel);
     verifiedPath = null;
 
-    const finalPath = policy === "rename" ? dedupePath(finalNoExt, ext) : `${finalNoExt}${ext}`;
+    // 扩展名以解码器实测编解码器为准：插件声明格式常缺失、CDN 的 Content-Type
+    // 一律 audio/mpeg，会让母带/无损文件落成 .mp3（内容其实是 FLAC）
+    const finalExt = extFromCodec(quality.codec) ?? ext;
+    const finalPath =
+      policy === "rename" ? dedupePath(finalNoExt, finalExt) : `${finalNoExt}${finalExt}`;
     await moveFile(partWithExt, finalPath);
 
     await writeLyricFiles(req, finalPath);
