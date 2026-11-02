@@ -429,12 +429,14 @@ const runTask = async (
     task.filePath = finalPath;
     task.tagWarning = !tagOk;
     task.finishedAt = Date.now();
-    // 音质升级：新文件落定后才删原文件（含同名歌词附档），失败不影响新文件
+    // 音质升级：新文件落定后才删原文件，失败不影响新文件
     if (replaceSource && replaceSource !== finalPath) {
       await fsp.unlink(replaceSource).catch((err) => {
         downloadLog.warn(`升级后删除原文件失败 ${replaceSource}:`, err);
       });
-      await deleteSourceSidecars(replaceSource);
+      // 新旧文件同基名（升级只换扩展名），清理旧附档时必须跳过刚为新文件写出的那份，
+      // 否则 writeLyricFiles 刚写的 .lrc/.ttml 会被当成旧文件附档删掉
+      await deleteSourceSidecars(replaceSource, finalPath);
     }
     broadcastState(task);
     downloadLog.info(`完成 ${req.track.title} → ${finalPath}`);
@@ -643,9 +645,18 @@ export const cancel = (taskId: string): void => {
 /** 下载附带的歌词文件可能的扩展名 */
 const LYRIC_SIDECAR_EXTS = [".lrc", ".qrc", ".yrc", ".krc", ".ttml", ".lys"];
 
-/** 删除原音频文件的同名歌词附档（音质升级替换原文件时清理） */
-const deleteSourceSidecars = async (filePath: string): Promise<void> => {
+/**
+ * 删除原音频文件的同名歌词附档（音质升级替换原文件时清理）
+ * @param filePath - 被替换掉的原音频路径
+ * @param keepAudioPath - 新文件路径；两者基名相同时，跳过新文件自己的附档
+ */
+const deleteSourceSidecars = async (filePath: string, keepAudioPath?: string): Promise<void> => {
   const base = filePath.slice(0, filePath.length - path.extname(filePath).length);
+  const keepBase = keepAudioPath
+    ? keepAudioPath.slice(0, keepAudioPath.length - path.extname(keepAudioPath).length)
+    : null;
+  // 同基名说明是"原地升级"，附档路径与新文件完全重合，删了就等于删掉刚写好的歌词
+  if (keepBase !== null && keepBase === base) return;
   await Promise.all(LYRIC_SIDECAR_EXTS.map((ext) => fsp.unlink(`${base}${ext}`).catch(() => {})));
 };
 

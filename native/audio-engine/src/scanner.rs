@@ -17,8 +17,12 @@ use walkdir::WalkDir;
 use crate::metadata;
 
 /// 支持的音频文件扩展名
+///
+/// 必须与 `shared/utils/audioFile.ts` 的 SUPPORTED_AUDIO_EXTENSIONS 保持一致：
+/// 两处不一致时，拖入/关联打开的单文件能通过校验，但扫描器会静默忽略它。
 const AUDIO_EXTENSIONS: &[&str] = &[
-    "mp3", "flac", "wav", "ogg", "aac", "m4a", "wma", "opus", "ape",
+    "mp3", "flac", "wav", "ogg", "oga", "aac", "m4a", "m4b", "wma", "opus", "ape", "alac", "dsf",
+    "dff",
 ];
 
 /// 每批回调的文件数
