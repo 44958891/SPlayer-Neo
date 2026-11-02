@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 
 /** 当前 schema 版本 */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 type TableInfoRow = { name: string };
 
@@ -50,6 +50,14 @@ export const migrate = (d: Database.Database): void => {
       d.exec("ALTER TABLE tracks ADD COLUMN cue_end_ms INTEGER");
     }
     v = 4;
+  }
+
+  // v4 → v5: 下载任务记录是否已回填实际音质，避免每次启动重复探测全部历史文件
+  if (v < 5) {
+    if (!hasColumn(d, "download_tasks", "probed")) {
+      d.exec("ALTER TABLE download_tasks ADD COLUMN probed INTEGER NOT NULL DEFAULT 0");
+    }
+    v = 5;
   }
 
   // 版本无关部分

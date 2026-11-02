@@ -179,3 +179,27 @@ pub fn cancel_scan() {
         info!("已发送扫描取消信号");
     }
 }
+
+/// 只读探测单个音频文件（不写任何标签）
+///
+/// 用于下载完成后的音质校验：此前借 `write_track_tags` 传空字段来"顺便探测"，
+/// 但写入路径是 temp + rename，即使不改任何字段也会重写文件并刷新修改时间。
+/// @param path - 音频文件绝对路径
+/// @param coverCacheDir - 封面缩略图缓存目录，缺省不生成缩略图
+#[napi]
+pub async fn probe_track_file(
+  path: String,
+  cover_cache_dir: Option<String>,
+) -> Result<Option<JsScannedTrack>> {
+  tokio::task::spawn_blocking(move || {
+    let mut track = scanner::probe_fast(&path, cover_cache_dir.as_deref())?;
+    if let Some((mtime, ctime, size)) = scanner::file_stat(std::path::Path::new(&path)) {
+      track.mtime = mtime;
+      track.ctime = ctime;
+      track.file_size = size;
+    }
+    Some(JsScannedTrack::from(track))
+  })
+  .await
+  .map_err(|e| Error::from_reason(format!("探测任务失败: {e}")))
+}

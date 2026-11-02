@@ -454,12 +454,16 @@ const runTask = async (
   }
 };
 
-/** 引擎探测文件的真实音质；无法解析返回 null */
+/**
+ * 引擎探测文件的真实音质；无法解析返回 null
+ *
+ * 必须走只读探测：以前借 writeTrackTags 传空字段"顺便探测"，而写入实现是
+ * temp + rename，即使一个标签都不改也会重写文件、刷新修改时间，表现为
+ * 「打开软件后本地歌曲文件的修改时间被统一刷成启动时间」。
+ */
 const readFileQuality = async (filePath: string): Promise<AudioQuality | null> => {
-  // 空字段写入 = 不修改任何标签，仅借写入后的重新探测拿回真实元数据
-  const [result] = await getEngine().writeTrackTags([{ path: filePath }], getCoverCacheDir());
-  const scanned = result?.track;
-  if (!result?.success || !scanned?.codec || scanned.codec === "unknown") return null;
+  const scanned = await getEngine().probeTrackFile(filePath, getCoverCacheDir());
+  if (!scanned?.codec || scanned.codec === "unknown") return null;
   return {
     codec: scanned.codec,
     sampleRate: scanned.sampleRate,

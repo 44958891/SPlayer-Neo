@@ -132,6 +132,7 @@ export const initDatabase = (): void => {
       file_path TEXT,
       error_code TEXT,
       tag_warning INTEGER NOT NULL DEFAULT 0,
+      probed INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
       finished_at INTEGER
     );

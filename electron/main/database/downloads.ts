@@ -13,6 +13,7 @@ interface RawRow {
   file_path: string | null;
   error_code: string | null;
   tag_warning: number;
+  probed: number;
   created_at: number;
   finished_at: number | null;
 }
@@ -28,6 +29,7 @@ const toTask = (raw: RawRow): DownloadTask => ({
   filePath: raw.file_path ?? undefined,
   errorCode: raw.error_code ?? undefined,
   tagWarning: raw.tag_warning === 1,
+  probed: raw.probed === 1,
   createdAt: raw.created_at,
   finishedAt: raw.finished_at ?? undefined,
 });
@@ -37,8 +39,8 @@ export const upsert = (task: DownloadTask): void => {
   getDb()
     .prepare(
       `INSERT INTO download_tasks
-         (task_id, track_json, quality_level, status, received, total, file_path, error_code, tag_warning, created_at, finished_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (task_id, track_json, quality_level, status, received, total, file_path, error_code, tag_warning, probed, created_at, finished_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(task_id) DO UPDATE SET
          track_json = excluded.track_json,
          quality_level = excluded.quality_level,
@@ -48,6 +50,7 @@ export const upsert = (task: DownloadTask): void => {
          file_path = excluded.file_path,
          error_code = excluded.error_code,
          tag_warning = excluded.tag_warning,
+         probed = excluded.probed,
          finished_at = excluded.finished_at`,
     )
     .run(
@@ -60,6 +63,7 @@ export const upsert = (task: DownloadTask): void => {
       task.filePath ?? null,
       task.errorCode ?? null,
       task.tagWarning ? 1 : 0,
+      task.probed ? 1 : 0,
       task.createdAt,
       task.finishedAt ?? null,
     );
