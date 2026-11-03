@@ -5,9 +5,28 @@
 - 仓库：https://github.com/44958891/SPlayer-Neo
 - 安装包目录：`D:\Download\SPlayer-Next-Mod\`
 - 源码工作区：`D:\BaiduNetdiskDownload\zcode\SPlayer-Next`
-- 当前最新：**1.1.0-beta.4**（2026-11-03）
+- 当前最新：**1.1.0-beta.5**（2026-11-03）
 
 > 说明：每个版本的"新增/修复"条目均按当期 asar 产物内的特征标记核验过（见文末核验方法），不是仅凭记录推断。
+
+---
+
+## 1.1.0-beta.5（2026-11-03）— DSD 实机验证与档位修正
+
+用自建的 DSD64 样本（DSF / 1bit / 352.8kHz）做了端到端验证，发现 2 个真问题。
+
+**修复**
+
+- **DSD 被判成 hq（有损）**：`levelOfQuality` 的无损编解码器白名单没有 DSD 家族，`dsd_lsbf_planar` 落到「按码率判断」分支，5644kbps 被判成 hq。主进程与渲染层两份白名单都已补 `dsd_lsbf` / `dsd_msbf` / `dsd_lsbf_planar` / `dsd_msbf_planar`
+- 修正后 DSD64 判为 `lossless`（8bit/352.8kHz 不满足 24bit 门槛，不会误报 hi-res/母带）
+
+**验证（真实文件）**
+
+- 自建 DSD64 样本：DSF 容器、1bit、2 声道、352.8kHz、2.0 秒、1.4MB
+- `probeTrackFile`：`codec=dsd_lsbf_planar`、`duration=2.0085`、`channels=2` ✓
+- `AudioPlayer.load`：成功解码，输出 48kHz/32bit（引擎重采样），`originalSampleRate=352800` ✓
+- `scanDirs`：扫描器能识别 `.dsf`，返回正确的 codec 与时长 ✓
+- 新增 `dsdQuality.spec.ts` 2 条（主渲一致 / 档位属无损家族）
 
 ---
 

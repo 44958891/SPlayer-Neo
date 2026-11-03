@@ -20,7 +20,20 @@ export const QUALITY_ORDER: readonly QualityLevel[] = [
 export const qualityRank = (level: QualityLevel): number => QUALITY_ORDER.indexOf(level);
 
 /** 无损编解码器 */
-const LOSSLESS_CODECS = new Set(["flac", "alac", "ape", "wav", "aiff", "wavpack", "tta"]);
+const LOSSLESS_CODECS = new Set([
+  "flac",
+  "alac",
+  "ape",
+  "wav",
+  "aiff",
+  "wavpack",
+  "tta",
+  // DSD 家族（DSF/DFF）：1bit 高采样率，属无损规格
+  "dsd_lsbf",
+  "dsd_msbf",
+  "dsd_lsbf_planar",
+  "dsd_msbf_planar",
+]);
 
 /**
  * 由音频元数据判定档位（与渲染端 getQualityLevel 同规则）
