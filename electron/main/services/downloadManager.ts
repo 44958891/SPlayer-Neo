@@ -22,6 +22,7 @@ import {
   resolveExtension,
   extFromCodec,
   findExistingAudio,
+  KNOWN_EXTS,
 } from "@main/utils/filename";
 import { levelMeets, levelOfQuality, type QualityLevel } from "@shared/utils/quality";
 import * as db from "@main/database/downloads";
@@ -104,27 +105,8 @@ const dedupeKeyOf = (req: DownloadRequest): string =>
 const artistString = (req: DownloadRequest): string =>
   req.track.artists.map((artist) => artist.name).join("/");
 
-/** 本地同名检测认可的音频扩展名（含点，小写） */
-const LOCAL_AUDIO_EXTS = new Set([
-  ".flac",
-  ".mp3",
-  ".m4a",
-  ".aac",
-  ".ogg",
-  ".oga",
-  ".opus",
-  ".wav",
-  ".ape",
-  ".wma",
-  ".wv",
-  ".aiff",
-  ".aif",
-  ".alac",
-  ".tta",
-  ".dsf",
-  ".dff",
-  ".mka",
-]);
+/** 本地同名检测认可的音频扩展名（与下载落盘清单同源，避免两处漂移） */
+const LOCAL_AUDIO_EXTS = KNOWN_EXTS;
 
 /**
  * 读取目录下音频文件的基名集合（小写）
@@ -414,8 +396,15 @@ const runTask = async (
     // 扩展名以解码器实测编解码器为准：插件声明格式常缺失、CDN 的 Content-Type
     // 一律 audio/mpeg，会让母带/无损文件落成 .mp3（内容其实是 FLAC）
     const finalExt = extFromCodec(quality.codec) ?? ext;
+    const desiredPath = `${finalNoExt}${finalExt}`;
+    // 升级任务允许覆盖，但只能覆盖「被替换的那个文件」：
+    // 升级常伴随扩展名变化（a.mp3 实为 flac → a.flac），若目录里另有一个
+    // 同基名的 a.flac（用户保留的另一版本），直接覆盖会把它删掉
+    const overwriteTarget = req.replaceSourcePath ? replaceSource : null;
     const finalPath =
-      policy === "rename" ? dedupePath(finalNoExt, finalExt) : `${finalNoExt}${finalExt}`;
+      policy !== "overwrite" || (desiredPath !== overwriteTarget && fs.existsSync(desiredPath))
+        ? dedupePath(finalNoExt, finalExt)
+        : desiredPath;
     await moveFile(partWithExt, finalPath);
 
     await writeLyricFiles(req, finalPath);

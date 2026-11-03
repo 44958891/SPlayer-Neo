@@ -21,6 +21,11 @@ describe("extFromCodec", () => {
     expect(extFromCodec("pcm_s24le")).toBe(".wav");
   });
 
+  it("DSD 家族统一落 dsf", () => {
+    expect(extFromCodec("dsd_lsbf")).toBe(".dsf");
+    expect(extFromCodec("dsd_msbf_planar")).toBe(".dsf");
+  });
+
   it("大小写与空白不敏感，无法识别时返回 null", () => {
     expect(extFromCodec("  FLAC ")).toBe(".flac");
     expect(extFromCodec("unknown")).toBeNull();

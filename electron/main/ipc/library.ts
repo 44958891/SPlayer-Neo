@@ -1,5 +1,6 @@
 import { ipcMain, dialog } from "electron";
 import fs from "node:fs/promises";
+import path from "node:path";
 import { store } from "@main/store";
 import {
   getAllTracks,
@@ -26,6 +27,9 @@ import { ErrorCode } from "@shared/types/errors";
 import type { JsTagWriteRequest } from "@splayer/audio-engine";
 import type { TagEditRequest, TagWriteOutcome } from "@shared/types/tagEditor";
 import type { TagBatchEntry } from "@shared/types/library";
+
+/** 与音频同名的歌词附档扩展名（删除曲目时一并清理） */
+const SIDECAR_EXTS = [".lrc", ".qrc", ".yrc", ".krc", ".ttml", ".lys"];
 
 /** 注册音乐库相关 IPC */
 export const registerLibraryIpc = (): void => {
@@ -352,6 +356,9 @@ export const registerLibraryIpc = (): void => {
       for (const filePath of paths) {
         try {
           await fs.unlink(filePath);
+          // 同步清理同名歌词附档，避免删歌后磁盘留下一堆孤儿 .lrc/.ttml
+          const base = filePath.slice(0, filePath.length - path.extname(filePath).length);
+          await Promise.all(SIDECAR_EXTS.map((ext) => fs.unlink(`${base}${ext}`).catch(() => {})));
         } catch {
           failed.push(filePath);
         }

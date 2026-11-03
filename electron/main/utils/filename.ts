@@ -106,18 +106,31 @@ const MIME_EXT: Record<string, string> = {
   "audio/x-wav": ".wav",
 };
 
-/** 已知音频扩展名 */
-const KNOWN_EXTS = new Set([
+/**
+ * 已知音频扩展名（下载落盘可能产生的全部后缀）
+ *
+ * 下载跳过检测、扩展名回退都依赖这份清单：少一个后缀就会漏判
+ * 「同名不同容器」的已存在文件，导致重复下载。
+ */
+export const KNOWN_EXTS: ReadonlySet<string> = new Set([
   ".flac",
   ".mp3",
   ".m4a",
   ".aac",
   ".ogg",
+  ".oga",
   ".opus",
   ".wav",
   ".ape",
+  ".wma",
   ".wv",
   ".aiff",
+  ".aif",
+  ".alac",
+  ".tta",
+  ".dsf",
+  ".dff",
+  ".mka",
 ]);
 
 /**
@@ -155,6 +168,8 @@ export const extFromCodec = (codec: string | undefined | null): string | null =>
   if (CODEC_EXT[key]) return CODEC_EXT[key];
   // PCM 家族（wav 容器内的裸流）统一落 .wav
   if (key.startsWith("pcm_")) return ".wav";
+  // DSD 家族（dsd_lsbf / dsd_msbf / dsd_lsbf_planar …）统一落 .dsf
+  if (key.startsWith("dsd_")) return ".dsf";
   return null;
 };
 
