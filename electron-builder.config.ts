@@ -121,6 +121,10 @@ const config: Configuration = {
     guid: "top.imsyy.splayer-next",
     installerIcon: "public/icons/favicon.ico",
     uninstallerIcon: "public/icons/favicon.ico",
+    // 安装器品牌图：顶部横幅（150x57）与欢迎/完成页侧图（164x314），均由 build 脚本生成
+    installerHeader: "build/installer/header.bmp",
+    installerSidebar: "build/installer/sidebar.bmp",
+    uninstallerSidebar: "build/installer/sidebar.bmp",
     artifactName: "SPlayerNeo-${version}-${arch}-setup.${ext}",
     shortcutName: "SPlayer Next",
     uninstallDisplayName: "SPlayer Next",

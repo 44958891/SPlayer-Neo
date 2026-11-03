@@ -11,6 +11,31 @@
 
 ---
 
+## 安装界面升级（2026-11-03）
+
+安装器从 NSIS 默认向导改成品牌化外观。
+
+**改动**
+
+- **品牌位图**：新增 `build/installer/header.bmp`（150×57，深底 + 品牌红渐变条 + logo + SPlayer Neo）与 `sidebar.bmp`（164×314，深底 + 圆角白卡 logo + 应用名），接进 `installerHeader` / `installerSidebar` / `uninstallerSidebar`。此前安装器只有 NSIS 自带那张蓝色默认图
+- **窗口标题**：`Caption "SPlayer Neo 安装"`。不用 `Name` 覆盖——`Name` 会触发 6029 重复定义告警（`-WX` 下直接编译失败），且 `PRODUCT_NAME` 同时决定安装目录与 userData，改了会打断老用户升级
+- **安装页状态文字**：新增 `InstFilesShow` 回调，把 instfiles 页的状态文字换成「正在安装 SPlayer Neo，请稍候…」，并把进度条与文字拉到与「安装选项」页同宽（12u 左边距 / 273u 宽），不再挤在左上角一小段
+- **协议页**：修掉 `<!-- agreement-version: 3 -->` 这行 HTML 注释被当成正文显示在协议开头的问题（`gen-license.ts` 增加注释剥离）
+
+**踩坑**
+
+- `MUI_PAGE_CUSTOMFUNCTION_SHOW` 必须在 `MUI_PAGE_INSTFILES` 展开**之前**定义才有用。我们的 `build/installer.nsh` 在 `assistedInstaller.nsh` 之前被 include，所以把 `!define` 写在 `customPageAfterChangeDir` 宏体里（该宏恰好在 `MUI_PAGE_INSTFILES` 前一行展开）才生效
+- 静默安装（`/S`）不创建任何 UI 页，`InstFilesShow` 不会执行——用探针文件验证机制时必须走交互模式
+
+**验证**
+
+- 机制验证：最小复现工程 + 探针文件，交互模式确认 `InstFilesShow` 被调用（静默模式确认不调用，符合预期）
+- 资产验证：新旧安装包对比，`$PLUGINSDIR` 里从只有 `modern-wizard.bmp`(1899B) 变为含 `modern-header.bmp`(2856B) 且 wizard 图替换为 5164B 品牌图
+- 安装验证：`/S /D=<临时目录>` 静默安装 ExitCode=0，落地 23 个文件、exe 就位
+- 抓包验证：首屏截图确认品牌横幅完整显示（修掉了初版红色圆弧被右边缘裁切、标题超出 150px 被截断两处自身问题）
+
+---
+
 ## 1.1.0-beta.5（2026-11-03）— DSD 实机验证与档位修正
 
 用自建的 DSD64 样本（DSF / 1bit / 352.8kHz）做了端到端验证，发现 2 个真问题。

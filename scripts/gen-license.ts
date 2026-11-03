@@ -12,17 +12,21 @@ const outDir = path.join(root, "build");
 const out = path.join(outDir, "license.txt");
 
 const mdToText = (md: string): string => {
-  return md
-    .replace(/<br\s*\/?>/gi, "")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/\*(.+?)\*/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
-    .replace(/^---+\s*$/gm, "─".repeat(60))
-    .replace(/^\s*[-*]\s+/gm, "  • ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return (
+    md
+      // 首行的 HTML 注释是版本标记（<!-- agreement-version: N -->），不该出现在用户可见的协议页
+      .replace(/^<!--[\s\S]*?-->\s*/i, "")
+      .replace(/<br\s*\/?>/gi, "")
+      .replace(/^#{1,6}\s+/gm, "")
+      .replace(/\*\*(.+?)\*\*/g, "$1")
+      .replace(/\*(.+?)\*/g, "$1")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
+      .replace(/^---+\s*$/gm, "─".repeat(60))
+      .replace(/^\s*[-*]\s+/gm, "  • ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+  );
 };
 
 const raw = fs.readFileSync(src, "utf-8");

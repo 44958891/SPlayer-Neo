@@ -38,6 +38,9 @@ LangString DESKTOP_SHORTCUT_CHECKBOX 1033 "Create a desktop shortcut"
 
   !macro customPageAfterChangeDir
     Page custom DesktopShortcutPageCreate DesktopShortcutPageLeave
+    ; 本宏在 assistedInstaller.nsh 里紧跟 !insertmacro MUI_PAGE_INSTFILES 之前展开，
+    ; 在这里定义 SHOW 钩子才能真正作用到「正在安装」那一页（MUI 各页按需取用后即 undef）
+    !define MUI_PAGE_CUSTOMFUNCTION_SHOW InstFilesShow
   !macroend
 
   Function DesktopShortcutPageCreate
@@ -87,3 +90,50 @@ LangString DESKTOP_SHORTCUT_CHECKBOX 1033 "Create a desktop shortcut"
     ${EndIf}
   ${EndIf}
 !macroend
+
+; ---------------------------------------------------------------------------
+; 「正在安装」页：加宽进度条、替换状态文案
+;
+; MUI 默认把进度条画在内容区左上角一小段，配合 common.nsh 的
+; ShowInstDetails nevershow，整个安装过程只有一根细条在动，信息量太低。
+; 这里在页面显示时把进度条拉到与「安装选项」页控件同宽（12u 左边距、273u 宽），
+; 状态文字换成带应用名的版本，并把两者上移到内容区顶部。
+;
+; 控件 ID 取自 NSIS 内置 instfiles 页：1004 = 进度条，1006 = 状态文字。
+; SWP_NOZORDER(0x4) | SWP_NOACTIVATE(0x10) = 0x14
+; ---------------------------------------------------------------------------
+!ifndef BUILD_UNINSTALLER
+
+  LangString SP_INSTALLING 2052 "正在安装 SPlayer Neo，请稍候…"
+  LangString SP_INSTALLING 1033 "Installing SPlayer Neo, please wait…"
+
+  Function InstFilesShow
+    Push $0
+
+    GetDlgItem $0 $HWNDPARENT 1006
+    ${If} $0 != 0
+      SendMessage $0 ${WM_SETTEXT} 0 "STR:$(SP_INSTALLING)"
+      System::Call 'user32::SetWindowPos(p r0, p 0, i 12, i 54, i 273, i 16, i 0x14)'
+    ${EndIf}
+
+    GetDlgItem $0 $HWNDPARENT 1004
+    ${If} $0 != 0
+      System::Call 'user32::SetWindowPos(p r0, p 0, i 12, i 76, i 273, i 10, i 0x14)'
+    ${EndIf}
+
+    Pop $0
+  FunctionEnd
+
+!endif
+
+; ---------------------------------------------------------------------------
+; 安装器窗口标题
+;
+; 标题默认是 「${PRODUCT_NAME} 安装」，而 PRODUCT_NAME 同时决定安装目录与
+; userData 目录（%APPDATA%\SPlayer-Next），改了会打断老用户升级。所以保留
+; 内部 productName 不变，只用 Caption 覆盖标题栏文字（不触发 6029 重定义告警）。
+; 卸载器那一趟不编译：卸载器有自己的标题。
+; ---------------------------------------------------------------------------
+!ifndef BUILD_UNINSTALLER
+  Caption "SPlayer Neo 安装"
+!endif
