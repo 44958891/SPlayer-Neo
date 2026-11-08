@@ -196,8 +196,8 @@ const config: Configuration = {
   },
   publish: {
     provider: "github",
-    owner: "SPlayer-Dev",
-    repo: "SPlayer-Next",
+    owner: "44958891",
+    repo: "SPlayer-Neo",
     channel: updateChannel,
   },
 };
