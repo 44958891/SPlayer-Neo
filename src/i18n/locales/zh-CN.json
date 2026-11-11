@@ -2317,6 +2317,18 @@
       "button": "清空全部",
       "confirmTitle": "清空全部数据库缓存？",
       "confirmDesc": "将删除上方全部数据库缓存，操作不可恢复"
+    },
+    "liquidThemeReveal": {
+      "label": "液体主题切换",
+      "description": "切换主题时新主题像液体一样从按钮流出并覆盖界面"
+    },
+    "liquidThemeSound": {
+      "label": "主题切换音效",
+      "description": "液体动画配套的水流音效（倒出/水花/流水/收尾）"
+    },
+    "liquidThemeVolume": {
+      "label": "音效音量",
+      "description": "主题切换音效的音量"
     }
   },
   "collection": {

@@ -51,10 +51,32 @@ const appearanceCategory: SettingCategory = {
         {
           key: "globalTint",
           type: "switch",
-          binding: { store: "theme", path: "globalTint" },
+          binding: { store: "settings", path: "appearance.globalTint" },
           defaultValue: false,
           // 图片背景下强制开启全局着色，禁用切换
           disabled: () => useThemeStore().appearanceStyle === "image",
+        },
+        {
+          key: "liquidThemeReveal",
+          type: "switch",
+          binding: { store: "settings", path: "appearance.liquidThemeReveal" },
+          defaultValue: true,
+        },
+        {
+          key: "liquidThemeSound",
+          type: "switch",
+          binding: { store: "settings", path: "appearance.liquidThemeSound" },
+          defaultValue: false,
+        },
+        {
+          key: "liquidThemeVolume",
+          type: "slider",
+          binding: { store: "settings", path: "appearance.liquidThemeVolume" },
+          min: 0,
+          max: 1,
+          step: 0.05,
+          defaultValue: 0.5,
+          disabled: () => !useSettingsStore().appearance.liquidThemeSound,
         },
       ],
     },

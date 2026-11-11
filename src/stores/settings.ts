@@ -122,6 +122,9 @@ export const useSettingsStore = defineStore(
       rememberCloseChoice: false,
       fontFamily: "",
       showPerformanceMonitor: false,
+      liquidThemeReveal: true,
+      liquidThemeSound: false,
+      liquidThemeVolume: 0.5,
     });
 
     /** 播放器 */

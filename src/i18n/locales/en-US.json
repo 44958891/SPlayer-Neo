@@ -2317,6 +2317,18 @@
       "button": "Clear All",
       "confirmTitle": "Clear all database caches?",
       "confirmDesc": "All database caches above will be cleared. This cannot be undone."
+    },
+    "liquidThemeReveal": {
+      "label": "Liquid theme reveal",
+      "description": "New theme pours from the button and covers the UI like liquid"
+    },
+    "liquidThemeSound": {
+      "label": "Theme sound",
+      "description": "Water sound effects for the liquid reveal (pour/splash/flow/finish)"
+    },
+    "liquidThemeVolume": {
+      "label": "Sound volume",
+      "description": "Volume of the theme-switch sound effects"
     }
   },
   "collection": {

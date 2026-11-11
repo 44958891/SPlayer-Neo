@@ -305,6 +305,12 @@ export interface AppearanceSettings {
   fontFamily: string;
   /** 性能监视器悬浮卡片 */
   showPerformanceMonitor: boolean;
+  /** 主题切换液体揭示动画 */
+  liquidThemeReveal: boolean;
+  /** 液体主题切换音效 */
+  liquidThemeSound: boolean;
+  /** 液体音效音量 0..1 */
+  liquidThemeVolume: number;
 }
 
 /** 强迫症设置 */
