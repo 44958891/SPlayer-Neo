@@ -52,14 +52,19 @@ export function createLiquidController(): LiquidController {
     }
   };
 
+  /** wave 阶段才需要每帧同步响度；其他阶段只在「离开 wave」的那一帧下发一次 0 */
+  let waveActive = false;
   const syncWave = (phase: LiquidPhase, progress: number): void => {
     if (!sound?.enabled) return;
     try {
       if (phase === "wave") {
+        waveActive = true;
         const u = Math.min(1, Math.max(0, (progress - 0.34) / 0.6));
         const level = Math.sin(Math.min(1, u * 1.15) * Math.PI * 0.85) * 0.85;
         sound.setWaveLevel(level, target);
-      } else {
+      } else if (waveActive) {
+        // 只在进入非 wave 阶段的首帧停止一次，避免每帧重复 stopWave
+        waveActive = false;
         sound.setWaveLevel(0, target);
       }
     } catch {

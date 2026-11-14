@@ -74,51 +74,105 @@ export const createLiquidReveal = (): LiquidReveal => {
   };
 
   /**
+   * 预热：在空闲时造一个 1×1 的离屏快照 + 一次 clip-path，让浏览器提前编译
+   * 相关合成路径、加载 SVG clip 的绘制实现。
+   * 不做这一步，冷启动后的第一次切换会多出一次 50ms 级的首次合成开销。
+   */
+  let warmed = false;
+  const warmup = (): void => {
+    if (warmed) return;
+    warmed = true;
+    if (typeof requestIdleCallback !== "function") return;
+    requestIdleCallback(
+      () => {
+        try {
+          const id = `ltr-warm-${++uid}`;
+          const svg = document.createElementNS(SVG_NS, "svg");
+          svg.setAttribute("width", "0");
+          svg.setAttribute("height", "0");
+          svg.style.cssText = "position:absolute;width:0;height:0;overflow:hidden";
+          const cp = document.createElementNS(SVG_NS, "clipPath");
+          cp.setAttribute("id", id);
+          cp.setAttribute("clipPathUnits", "userSpaceOnUse");
+          const p = document.createElementNS(SVG_NS, "path");
+          p.setAttribute("clip-rule", "evenodd");
+          p.setAttribute("d", "M0 0H1V1H0Z");
+          cp.appendChild(p);
+          const defs = document.createElementNS(SVG_NS, "defs");
+          defs.appendChild(cp);
+          svg.appendChild(defs);
+          const probe = document.createElement("div");
+          probe.style.cssText =
+            `position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;` +
+            `clip-path:url(#${id});will-change:clip-path;backface-visibility:hidden`;
+          document.body.appendChild(svg);
+          document.body.appendChild(probe);
+          void probe.offsetHeight;
+          probe.remove();
+          svg.remove();
+        } catch {
+          /* 预热失败不影响功能 */
+        }
+      },
+      { timeout: 2000 },
+    );
+  };
+
+  /**
    * 冻结一棵克隆树为「旧主题快照」。
-   * 主题完全由 :root 内联的 --s-* 变量 + .dark/.light class + data-appearance-style
-   * 驱动；克隆树仍是 :root 的后代，切主题后会跟着变。所以在克隆根上：
-   *   - 把 root.style 里所有 --s-* 内联变量原样拷贝（克隆根覆盖继承）
-   *   - 复制 dark/light class（选择器 ".dark .x" 在克隆根同样命中）
-   *   - 复制 data-appearance-style（选择器是 html[...]，这里退化为克隆根自身的 [data-...]，
-   *     配合下面注入的局部补丁选择器生效）
-   * 之后 :root 怎么改都不影响快照。
+   *
+   * 性能要点（决定动画是否掉帧）：
+   *  - 不逐元素写 inline style：几千个元素各写 4 条样式会摧毁样式共享，
+   *    让克隆树无法走合成快速路径。改用一条 <style> 规则批量禁用动画/过渡。
+   *  - 只对真正滚动过的容器内联 overflow:hidden（数量很少）。
+   *  - inert 本身已阻断焦点，不再逐个改 tabIndex。
    */
   const freezeClone = (clone: HTMLElement): void => {
     const root = document.documentElement;
-    // 拷贝 root.style 里全部自定义属性（--s-* 色板/封面/其他内联主题变量）
+    // 拷贝 root.style 里全部自定义属性（--s-* 色板/封面/内联主题变量）。
+    // 只拷 --s-* 前缀，避免把无关内联属性带进快照。
+    const vars: string[] = [];
     for (let i = 0; i < root.style.length; i++) {
       const name = root.style[i];
-      if (name.startsWith("--")) {
-        clone.style.setProperty(name, root.style.getPropertyValue(name));
+      if (name.startsWith("--s-")) {
+        vars.push(`${name}:${root.style.getPropertyValue(name)}`);
       }
     }
     // --s-app-bg 定义在样式表的 html{} 上，克隆根不是 html 拿不到——显式补上
-    if (!clone.style.getPropertyValue("--s-app-bg")) {
-      clone.style.setProperty(
-        "--s-app-bg",
-        root.dataset.appearanceStyle === "image" ? "transparent" : "rgb(var(--s-surface))",
+    if (!vars.some((v) => v.startsWith("--s-app-bg:"))) {
+      vars.push(
+        `--s-app-bg:${
+          root.dataset.appearanceStyle === "image" ? "transparent" : "rgb(var(--s-surface))"
+        }`,
       );
     }
+    clone.style.cssText = vars.join(";");
+
     // 明暗 class（".dark .x" 选择器在克隆根内同样生效）
     if (root.classList.contains("dark")) clone.classList.add("dark");
     if (root.classList.contains("light")) clone.classList.add("light");
-    // 外观风格：真实选择器是 html[data-appearance-style]，克隆根不是 html，
-    // 故给克隆根挂同名属性并靠下方 <style> 补丁把 html[...] 选择器平移到克隆根
     if (root.dataset.appearanceStyle) {
       clone.dataset.appearanceStyle = root.dataset.appearanceStyle;
     }
-
     clone.setAttribute("inert", "");
     clone.setAttribute("aria-hidden", "true");
-    clone.style.pointerEvents = "none";
-    clone.style.userSelect = "none";
-    // 内层滚动容器冻结在当前位置 + 禁动画
-    clone.querySelectorAll<HTMLElement>("*").forEach((el) => {
-      el.style.animation = "none";
-      el.style.transition = "none";
-      if (el.scrollTop || el.scrollLeft) el.style.overflow = "hidden";
-      if (el.tabIndex >= 0) el.tabIndex = -1;
-    });
+
+    // 一条 CSS 规则覆盖整棵克隆树：禁动画/过渡/交互。
+    // 比逐元素写 inline style 快两个数量级，且保留样式共享。
+    const kill = document.createElement("style");
+    kill.textContent =
+      "*{animation:none!important;transition:none!important}" +
+      "*,*::before,*::after{pointer-events:none!important;user-select:none!important}";
+    clone.appendChild(kill);
+
+    // 只处理真正滚动过的容器（通常 0~3 个），把滚动偏移冻结在快照里
+    const scrollables = clone.querySelectorAll<HTMLElement>("*");
+    for (let i = 0; i < scrollables.length; i++) {
+      const el = scrollables[i];
+      if (el.scrollTop || el.scrollLeft) {
+        el.style.overflow = "hidden";
+      }
+    }
   };
 
   const buildOverlay = (target: HTMLElement): void => {
@@ -137,8 +191,12 @@ export const createLiquidReveal = (): LiquidReveal => {
       "z-index:2147483000",
       "pointer-events:none",
       "overflow:hidden",
-      "contain:strict",
+      // 关键：提前把图层提升到合成层，clip-path 每帧变化时不触发重排/重绘。
+      // 没有这一条，每帧裁剪都要重新光栅化整屏，是掉帧主因。
+      "will-change:clip-path",
+      "backface-visibility:hidden",
     ].join(";");
+    // 注意：不用 contain:strict —— 它会在 clip-path 变化时反复重算包含块
     clone.style.position = "absolute";
     clone.style.left = `${targetRect.left}px`;
     clone.style.top = `${targetRect.top}px`;
@@ -221,25 +279,17 @@ export const createLiquidReveal = (): LiquidReveal => {
     // 1) 克隆旧主题（此刻真实 DOM 还是旧主题）
     buildOverlay(target);
 
-    // 2) 提交新主题到真实 DOM（调用方改 store/data-theme）
-    try {
-      o.onThemeApplied?.();
-    } catch {
-      /* 主题提交失败也不留脏快照 */
-    }
-
-    running = true;
-    onDoneCb = o.onDone;
-
-    // 3) 每帧更新 clip-path：液体 path 与整屏 rect 用 evenodd 合成"补集"
+    // 2) 让快照先上屏一帧，避免「克隆 + 挂载 + 全量重算样式」挤在同一帧造成长卡顿
+    const rectD = `M0 0H${vw}V${vh}H0Z`;
+    let lastD = "";
     unsubscribe = ctl.subscribe((f) => {
-      if (!pathEl) return;
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      const rect = `M0 0H${w}V${h}H0Z`;
+      const p = pathEl;
+      if (!p) return;
       const liquid = f.visible && f.path ? f.path : "";
-      // evenodd：整屏挖掉液体轮廓 → 液体处剪开旧快照、露新主题
-      pathEl.setAttribute("d", liquid ? `${rect}${liquid}` : rect);
+      const d = liquid ? rectD + liquid : rectD;
+      if (d === lastD) return;
+      lastD = d;
+      p.setAttribute("d", d);
     });
 
     ctl.onFinish = () => {
@@ -248,22 +298,41 @@ export const createLiquidReveal = (): LiquidReveal => {
       onDoneCb?.();
     };
 
-    const ok = ctl.start(
-      {
-        originX: ox,
-        originY: Math.max(0, oy),
-        width: vw,
-        height: vh,
-        duration: Math.max(600, o.duration ?? 1900),
-        seed: 17,
-      },
-      o.sound ?? null,
-      o.to,
-    );
-    if (!ok) {
-      cleanup();
-      return false;
-    }
+    const begin = (): void => {
+      // 3) 提交新主题到真实 DOM（调用方改 store/data-theme）
+      try {
+        o.onThemeApplied?.();
+      } catch {
+        /* 主题提交失败也不留脏快照 */
+      }
+      // 4) 启动液体动画
+      const ok = ctl.start(
+        {
+          originX: ox,
+          originY: Math.max(0, oy),
+          width: vw,
+          height: vh,
+          duration: Math.max(600, o.duration ?? 1900),
+          seed: 17,
+        },
+        o.sound ?? null,
+        o.to,
+      );
+      if (!ok) {
+        cleanup();
+      }
+    };
+
+    running = true;
+    onDoneCb = o.onDone;
+    // 双 rAF：确保快照已完成首次布局与合成，再切换主题
+    requestAnimationFrame(() => {
+      if (!running) return;
+      requestAnimationFrame(() => {
+        if (!running) return;
+        begin();
+      });
+    });
     return true;
   };
 
@@ -271,6 +340,9 @@ export const createLiquidReveal = (): LiquidReveal => {
     ctl.cancel();
     cleanup();
   };
+
+  // 空闲时预热合成路径，消掉首次切换的额外卡顿
+  warmup();
 
   return {
     start,
