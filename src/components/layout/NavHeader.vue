@@ -55,6 +55,7 @@ const themeIcon = computed(() => {
   return IconSun;
 });
 
+/** 独立主题按钮的提示：显示点击后切到的模式 */
 const themeLabel = computed(() => {
   if (theme.mode === "light") return t("settings.themeMode.dark");
   if (theme.mode === "dark") return t("settings.themeMode.system");
@@ -62,11 +63,6 @@ const themeLabel = computed(() => {
 });
 
 const menuItems = computed<DropdownMenuItem[]>(() => [
-  {
-    key: "theme",
-    label: themeLabel.value,
-    icon: themeIcon.value,
-  },
   { key: "uiZoom", label: t("uiZoom.title"), icon: IconScaling },
   { key: "reload", label: t("nav.reload"), icon: IconRefreshCw, separator: true },
   { key: "devtools", label: t("nav.devtools"), icon: IconTerminal },
@@ -74,22 +70,23 @@ const menuItems = computed<DropdownMenuItem[]>(() => [
 ]);
 
 const onMenuSelect = (key: string): void => {
-  if (key === "theme") toggleThemeLiquid();
-  else if (key === "reload") location.reload();
+  if (key === "reload") location.reload();
   else if (key === "devtools") window.api.system.toggleDevTools();
   else if (key === "uiZoom") uiZoomOpen.value = true;
   else if (key === "settings") showSettings();
 };
 
 /** 主题切换：优先液体揭示，不支持/动画关闭时直接切 */
-const toggleThemeLiquid = (): void => {
+const toggleThemeLiquid = (e?: MouseEvent): void => {
   const next = theme.isDark ? "light" : "dark";
   const wantAnim =
     settings.appearance.liquidThemeReveal &&
     !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  // 用主题触发按钮作为液柱起点（模板里打了 data-theme-trigger）
-  const originEl = document.querySelector<HTMLElement>("[data-theme-trigger]");
+  // 液柱从触发按钮下缘流出：优先取事件源，兜底查 data-theme-trigger
+  const originEl =
+    (e?.currentTarget as HTMLElement | null) ??
+    document.querySelector<HTMLElement>("[data-theme-trigger]");
 
   if (wantAnim) {
     if (settings.appearance.liquidThemeSound) void getSynth().unlock();
@@ -148,16 +145,22 @@ const toggleThemeLiquid = (): void => {
     <div class="flex-1 h-full min-w-4" />
     <!-- 右侧 -->
     <div class="flex items-center gap-2 sm:gap-3 shrink-0">
+      <!-- 主题切换：独立圆钮，放在头像左侧；液体动画从这颗按钮下缘流出 -->
+      <SButton
+        class="app-no-drag shrink-0"
+        variant="tertiary"
+        circle
+        :size="40"
+        :title="themeLabel"
+        data-theme-trigger
+        @click="toggleThemeLiquid"
+      >
+        <template #icon><component :is="themeIcon" /></template>
+      </SButton>
       <NavUser />
       <SDropdownMenu :items="menuItems" @select="onMenuSelect">
         <template #trigger>
-          <SButton
-            class="app-no-drag shrink-0"
-            variant="tertiary"
-            circle
-            :size="40"
-            data-theme-trigger
-          >
+          <SButton class="app-no-drag shrink-0" variant="tertiary" circle :size="40">
             <template #icon><IconLucideSettings /></template>
           </SButton>
         </template>
