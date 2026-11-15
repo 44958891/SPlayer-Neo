@@ -9,7 +9,6 @@ import { LiquidSynth } from "@/utils/liquid/sound";
 import type { DropdownMenuItem } from "@/components/ui/SDropdownMenu.vue";
 import IconSun from "~icons/lucide/sun";
 import IconMoon from "~icons/lucide/moon";
-import IconMonitor from "~icons/lucide/monitor";
 import IconRefreshCw from "~icons/lucide/refresh-cw";
 import IconTerminal from "~icons/lucide/terminal";
 import IconSettings from "~icons/lucide/settings";
@@ -49,18 +48,13 @@ watch(
 /** 界面缩放弹窗开关 */
 const uiZoomOpen = ref(false);
 
-const themeIcon = computed(() => {
-  if (theme.mode === "light") return IconMoon;
-  if (theme.mode === "dark") return IconMonitor;
-  return IconSun;
-});
+/** 当前模式对应的图标（二态：浅色显示太阳、深色显示月亮） */
+const themeIcon = computed(() => (theme.isDark ? IconMoon : IconSun));
 
 /** 独立主题按钮的提示：显示点击后切到的模式 */
-const themeLabel = computed(() => {
-  if (theme.mode === "light") return t("settings.themeMode.dark");
-  if (theme.mode === "dark") return t("settings.themeMode.system");
-  return t("settings.themeMode.light");
-});
+const themeLabel = computed(() =>
+  theme.isDark ? t("settings.themeMode.light") : t("settings.themeMode.dark"),
+);
 
 const menuItems = computed<DropdownMenuItem[]>(() => [
   { key: "uiZoom", label: t("uiZoom.title"), icon: IconScaling },

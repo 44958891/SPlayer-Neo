@@ -1637,8 +1637,7 @@
       "label": "Theme Mode",
       "description": "Application color theme",
       "light": "Light",
-      "dark": "Dark",
-      "system": "System"
+      "dark": "Dark"
     },
     "themeSource": {
       "label": "Theme Color Source",

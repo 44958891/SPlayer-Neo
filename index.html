@@ -137,13 +137,15 @@
     <script>
       // 确定明暗模式与主色
       (function () {
-        let mode = "system";
+        // 只在浅色/深色之间取值；无存档或旧存档（含已移除的 "system"）走系统偏好
+        const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        let mode = systemDark ? "dark" : "light";
         let primary = "#fe7971";
         try {
           const raw = localStorage.getItem("theme");
           if (raw) {
             const theme = JSON.parse(raw);
-            mode = theme.mode || "system";
+            if (theme.mode === "light" || theme.mode === "dark") mode = theme.mode;
             if (
               theme.source === "custom" &&
               typeof theme.customColor === "string" &&
@@ -154,10 +156,7 @@
           }
         } catch (e) {}
         document.documentElement.style.setProperty("--splash-primary", primary);
-        const isDark =
-          mode === "dark" ||
-          (mode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-        if (!isDark) document.documentElement.classList.add("light");
+        if (mode !== "dark") document.documentElement.classList.add("light");
       })();
     </script>
   </head>

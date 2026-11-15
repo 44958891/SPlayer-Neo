@@ -8,14 +8,20 @@ import {
   SOLID_PALETTE_DARK,
 } from "@/utils/color";
 
-/** 主题模式循环顺序 */
-const MODE_CYCLE: ThemeMode[] = ["light", "dark", "system"];
+/** 主题模式循环顺序（只保留浅色/深色） */
+const MODE_CYCLE: ThemeMode[] = ["light", "dark"];
 
 export const useThemeStore = defineStore(
   "theme",
   () => {
-    /** 主题模式 */
-    const mode = ref<ThemeMode>("system");
+    /** 主题模式：默认跟随系统明暗作为初始值，之后只由用户显式切换 */
+    const mode = ref<ThemeMode>(
+      typeof window !== "undefined" && window.matchMedia
+        ? window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light"
+        : "light",
+    );
     /** 颜色来源 */
     const source = ref<ThemeSource>("default");
     /** 自定义主色 HEX */
@@ -41,15 +47,8 @@ export const useThemeStore = defineStore(
       appearanceStyle.value === "image" && !imageBackground.src ? "solid" : appearanceStyle.value,
     );
 
-    /** 系统暗色偏好 */
-    const systemDark = usePreferredDark();
-
     /** 当前是否为暗色（图片背景不再强制暗色，主题模式始终生效） */
-    const isDark = computed(() => {
-      if (mode.value === "dark") return true;
-      if (mode.value === "light") return false;
-      return systemDark.value;
-    });
+    const isDark = computed(() => mode.value === "dark");
 
     /** 当前使用的主色 HEX */
     const activeColor = computed(() => {
@@ -146,6 +145,10 @@ export const useThemeStore = defineStore(
 
     /** 初始化 */
     const init = (): void => {
+      // 旧存档兼容：历史上存在 "system" 模式，迁移为当时的实际明暗
+      if ((mode.value as string) === "system") {
+        mode.value = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      }
       if (typeof customColor.value !== "string" || !customColor.value.startsWith("#")) {
         customColor.value = DEFAULT_PRIMARY;
       }

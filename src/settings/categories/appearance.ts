@@ -20,9 +20,8 @@ const appearanceCategory: SettingCategory = {
           options: [
             { value: "light", labelKey: "settings.themeMode.light" },
             { value: "dark", labelKey: "settings.themeMode.dark" },
-            { value: "system", labelKey: "settings.themeMode.system" },
           ],
-          defaultValue: "system",
+          defaultValue: "light",
         },
         {
           key: "themeSource",

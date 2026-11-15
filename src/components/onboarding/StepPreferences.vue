@@ -7,7 +7,6 @@ import { DEFAULT_PRIMARY } from "@/utils/color";
 import IconSettings from "~icons/lucide/settings-2";
 import IconSun from "~icons/lucide/sun";
 import IconMoon from "~icons/lucide/moon";
-import IconMonitor from "~icons/lucide/monitor";
 import IconCheck from "~icons/lucide/check";
 import IconChevronLeft from "~icons/lucide/chevron-left";
 import IconArrowRight from "~icons/lucide/arrow-right";
@@ -21,7 +20,6 @@ const { mode, source, customColor } = storeToRefs(theme);
 const MODES: { value: ThemeMode; icon: typeof IconSun; labelKey: string }[] = [
   { value: "light", icon: IconSun, labelKey: "settings.themeMode.light" },
   { value: "dark", icon: IconMoon, labelKey: "settings.themeMode.dark" },
-  { value: "system", icon: IconMonitor, labelKey: "settings.themeMode.system" },
 ];
 
 const PRESET_COLORS = [

@@ -1637,8 +1637,7 @@
       "label": "主题模式",
       "description": "应用的颜色主题",
       "light": "浅色模式",
-      "dark": "深色模式",
-      "system": "跟随系统"
+      "dark": "深色模式"
     },
     "themeSource": {
       "label": "主题色来源",

@@ -1,5 +1,5 @@
-/** 主题模式 */
-export type ThemeMode = "light" | "dark" | "system";
+/** 主题模式（仅浅色/深色，不提供跟随系统） */
+export type ThemeMode = "light" | "dark";
 
 /** 主题颜色来源 */
 export type ThemeSource = "default" | "custom" | "cover" | "solid";
