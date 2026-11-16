@@ -1,4 +1,6 @@
 <script setup lang="ts" generic="T">
+import { anchorScrollCompensation, recomputeTopsFrom } from "@/utils/virtualListLayout";
+
 export interface SVirtualListExposed {
   wrapperRef: HTMLElement | null;
   /** 实际滚动容器 */
@@ -82,17 +84,17 @@ const initializeHeights = (): void => {
   updateTops();
 };
 
-/** 从指定索引开始重算累积位置 */
+/**
+ * 从指定索引开始重算累积位置（增量，实现见 virtualListLayout）。
+ *
+ * 之前每次测量都从 0 全量重算（O(n)），长歌单滚动时每帧跑一遍是卡顿来源之一。
+ */
 const updateTops = (fromIndex = 0): void => {
   if (props.itemFixed) return;
   const heights = itemHeights.value;
   const tops =
     itemTops.value.length === heights.length ? itemTops.value : new Array<number>(heights.length);
-  let top = fromIndex > 0 ? tops[fromIndex - 1] + heights[fromIndex - 1] : 0;
-  for (let idx = fromIndex; idx < heights.length; idx++) {
-    tops[idx] = top;
-    top += heights[idx];
-  }
+  recomputeTopsFrom(tops, heights, fromIndex);
   itemTops.value = tops;
 };
 
@@ -172,26 +174,67 @@ const visibleItems = computed(() => {
   return props.items.slice(actualStartIndex.value, actualEndIndex.value + 1);
 });
 
-/** 测量可见项的真实 DOM 高度，允许 0.5px 误差 */
+/**
+ * 测量可见项的真实 DOM 高度，允许 0.5px 误差。
+ *
+ * 长列表卡顿/乱跳的三个修正点都在这里：
+ * 1. 只从「最早发生变化的那一项」增量重算累积位置，不再全量 updateTops()
+ * 2. 高度修正后做滚动锚定补偿：以视口顶部那一项为锚，按偏移差修正 scrollTop，
+ *    否则前面某项高度被修正会让整个坐标系平移，表现为「列表突然跳一下」
+ * 3. 测量过程中临时关掉高度过渡（见模板中的 transition），避免长列表
+ *    几十万像素的高度动画持续把内容推走
+ */
 const measureItemHeights = (): void => {
+  if (suppressMeasure) return;
   if (props.itemFixed || !itemRefs.value.length || props.items.length === 0) return;
-  let hasChanges = false;
+
+  /** 最早发生高度变化的索引，用于增量重算起点 */
+  let firstChanged = Number.POSITIVE_INFINITY;
   itemRefs.value.forEach((element) => {
     if (!element) return;
-    // 用 data-index 取真实索引
     const actualIndex = Number(element.dataset.index);
     if (!Number.isInteger(actualIndex) || actualIndex < 0 || actualIndex >= props.items.length)
       return;
     const height = element.getBoundingClientRect().height;
     if (height > 0 && Math.abs(height - itemHeights.value[actualIndex]) > 0.5) {
       itemHeights.value[actualIndex] = height;
-      hasChanges = true;
+      if (actualIndex < firstChanged) firstChanged = actualIndex;
     }
   });
-  if (hasChanges) {
-    triggerRef(itemHeights);
-    updateTops();
+
+  if (firstChanged === Number.POSITIVE_INFINITY) return;
+
+  /** 索引项顶部偏移（含 paddingTop）；内联一份避免依赖下方 getItemTop 的定义顺序 */
+  const topOf = (index: number): number =>
+    props.itemFixed
+      ? index * props.itemHeight + props.paddingTop
+      : (itemTops.value[index] || 0) + props.paddingTop;
+
+  // 锚点：视口顶部可见项及其在坐标系中的位移量（修正前后对比）
+  const anchorIndex = actualStartIndex.value;
+  const anchorTopBefore = topOf(anchorIndex);
+  const scrollEl = scrollRef.value;
+  const scrollBefore = scrollEl?.scrollTop ?? 0;
+
+  triggerRef(itemHeights);
+  // 只为受影响的尾部重算，长列表下可省掉绝大部分循环
+  updateTops(firstChanged);
+
+  // 锚点补偿：只有当变化发生在锚点之前，才需要通过 scrollTop 抵消位移
+  if (scrollEl) {
+    const delta = anchorScrollCompensation(
+      firstChanged,
+      anchorIndex,
+      anchorTopBefore,
+      topOf(anchorIndex),
+    );
+    if (delta !== 0) {
+      scrollEl.scrollTop = scrollBefore + delta;
+      scrollTop.value = scrollEl.scrollTop;
+    }
   }
+
+  calculateVisibleRange(scrollTop.value);
 };
 
 const debouncedMeasure = useDebounceFn(measureItemHeights, 50);
@@ -328,6 +371,15 @@ onMounted(() => {
 /** 滚动位置 */
 let savedScrollTop = 0;
 
+/**
+ * 恢复滚动位置期间抑制高度测量。
+ *
+ * KeepAlive 重新激活时，DOM 刚挂回、字体/图片尚未回流，此时测出的高度不可靠；
+ * 若照常测量并做锚点补偿，会与下面的 scrollTo 互相拉扯，表现为「切回来先跳一下」。
+ * 用两帧窗口跳过这段不稳定期。
+ */
+let suppressMeasure = false;
+
 onDeactivated(() => {
   const domTop = scrollRef.value?.scrollTop;
   savedScrollTop = domTop && domTop > 0 ? domTop : scrollTop.value;
@@ -336,14 +388,21 @@ onDeactivated(() => {
 /** 恢复滚动位置并重算可见范围 */
 onActivated(() => {
   const targetTop = savedScrollTop > 0 ? savedScrollTop : scrollTop.value;
-  if (targetTop > 0) {
-    scrollTop.value = targetTop;
+  if (targetTop <= 0) return;
+  suppressMeasure = true;
+  scrollTop.value = targetTop;
+  calculateVisibleRange(targetTop);
+  nextTick(() => {
+    scrollRef.value?.scrollTo({ top: targetTop });
     calculateVisibleRange(targetTop);
-    nextTick(() => {
-      scrollRef.value?.scrollTo({ top: targetTop });
-      calculateVisibleRange(targetTop);
+    // 两帧后恢复测量：此时布局已稳定，锚点补偿不会与恢复动作冲突
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        suppressMeasure = false;
+        if (!props.itemFixed) measureItemHeights();
+      });
     });
-  }
+  });
 });
 
 onUnmounted(() => {
@@ -395,7 +454,6 @@ defineExpose({
           :style="{
             height: `${totalHeight}px`,
             position: 'relative',
-            transition: 'height 0.3s ease',
           }"
         >
           <div ref="contentRef" class="absolute inset-x-0 top-0">

@@ -21,6 +21,7 @@ import IconLucideX from "~icons/lucide/x";
 import IconLucideRotateCcw from "~icons/lucide/rotate-ccw";
 import IconLucideTrash2 from "~icons/lucide/trash-2";
 import IconLucideTriangleAlert from "~icons/lucide/triangle-alert";
+import IconLucideCircleAlert from "~icons/lucide/circle-alert";
 import IconLucideFolderOpen from "~icons/lucide/folder-open";
 
 const props = defineProps<{
@@ -140,7 +141,6 @@ defineExpose({ playAll });
     :items="tasks"
     :item-height="88"
     :get-item-key="(task: DownloadTask) => task.taskId"
-    item-fixed
     height="100%"
     :padding-bottom="80"
   >
@@ -161,7 +161,7 @@ defineExpose({ playAll });
     <template #default="{ item, index }: { item: DownloadTask; index: number }">
       <div class="px-3 pb-3">
         <div
-          class="group flex items-center gap-3 pl-3 pr-6 h-19 rounded-xl border-2 border-solid transition-[background-color,border-color] duration-200"
+          class="group flex items-center gap-3 pl-3 pr-6 min-h-19 py-2 rounded-xl border-2 border-solid transition-[background-color,border-color] duration-200"
           :class="rowClass(item)"
           @dblclick="isDone(item) ? playTask(item) : undefined"
         >
@@ -231,6 +231,15 @@ defineExpose({ playAll });
                 />
                 <span class="truncate">{{ artistText(item) }}</span>
               </div>
+              <!-- 失败原因：放在标题下方的宽区，避免挤在窄状态列里折成多行 -->
+              <div
+                v-if="failReason(item)"
+                class="mt-1 flex items-center gap-1 text-xs text-red-500/85 dark:text-red-400/85"
+                :title="failReason(item)"
+              >
+                <IconLucideCircleAlert class="size-3.5 shrink-0" />
+                <span class="truncate">{{ failReason(item) }}</span>
+              </div>
             </div>
           </div>
           <!-- 进度 / 状态 -->
@@ -246,14 +255,8 @@ defineExpose({ playAll });
                 {{ percent(item) }}%
               </span>
             </div>
-            <span
-              v-else
-              class="text-sm text-on-surface-variant/60"
-              :class="failReason(item) && 'text-red-500/80 dark:text-red-400/80'"
-              :title="failReason(item) || undefined"
-            >
+            <span v-else class="text-sm text-on-surface-variant/60">
               {{ t(STATUS_KEY[item.status]) }}
-              <template v-if="failReason(item)">· {{ failReason(item) }}</template>
             </span>
           </div>
           <!-- 大小 -->
