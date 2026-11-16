@@ -5,9 +5,73 @@
 - 仓库：https://github.com/44958891/SPlayer-Neo
 - 安装包目录：`D:\Download\SPlayer-Next-Mod\`
 - 源码工作区：`D:\BaiduNetdiskDownload\zcode\SPlayer-Next`
-- 当前最新：**1.1.0-beta.5**（2026-11-03）
+- 当前最新：**1.1.0-beta.10**（2026-11-17）
 
 > 说明：每个版本的"新增/修复"条目均按当期 asar 产物内的特征标记核验过（见文末核验方法），不是仅凭记录推断。
+
+---
+
+## 1.1.0-beta.10（2026-11-17）— 下载可靠性与长列表流畅度
+
+**下载：音质不再静默降级**
+
+- 根因：`downloadManager` 的档位校验只在「升级任务」时执行，普通下载传 `originalLevel = null` 等于完全跳过——选 Master 拿到 Lossless 也会成功落盘
+- 现在普通下载以「请求档位」为落盘下限，达不到直接报 `DOWNLOAD_QUALITY_NOT_MET` 并**不保存文件**（流媒体来源除外，档位由服务端决定）
+
+**下载页：失败原因可见**
+
+- 此前只渲染「失败」两个字。现在按 `task.errorCode` 映射 18 个错误码的中英文案
+- 布局修正：状态列固定 128px 会把长文案折成 4 行，改为状态列只显示「失败」，原因移到标题下方整行（可用宽度 128px → 475px），单行截断 + 完整文案进 tooltip
+- 行高从固定 `h-19` 改为 `min-h-19 + py-2`，`DownloadList` 相应去掉 `item-fixed` 改走动态测量
+
+**长歌单滚动卡顿/乱跳**
+
+- 累积位置改为**增量重算**（只从最早变化项往后），原来每次测量都从 0 全量 O(n) 重算，几千项列表滚动时每帧都跑
+- 新增**滚动锚定补偿**：某项高度被修正后按锚点位移量同步修正 `scrollTop`，消除「列表突然跳一下」
+- 去掉内容容器的 `transition: height 0.3s`——长列表高度动辄几十万像素，这个过渡会持续把内容推走
+- KeepAlive 重新激活时用两帧窗口抑制测量，避免恢复滚动位置与高度测量互相拉扯
+- 布局计算抽到 `src/utils/virtualListLayout.ts`（13 个单测）
+
+**播放：在线歌曲加载失败不再直接跳过**
+
+- 根因两处叠加：`classifyLoadError` 对任何 `http(s)://` 音源的失败一律归为 `NETWORK_ERROR`；换源条件又把 `NETWORK_ERROR`/`NETWORK_TIMEOUT` 硬性排除 → 在线歌曲的换源逻辑等于从未生效
+- 现在网络类错误也允许尝试「尚未试过的其他来源」（每个 provider 仍只消费一次，另加 `MAX_ATTEMPTS = 6` 防死循环）
+- 顺带修掉换源耗尽时真实错误提示被吞掉的问题
+
+**QQ 音乐高档位链路**
+
+- 候选模板只到 `AI00`(hi-res)，选「臻品母带」时 `findIndex = -1` 退化成整表、静默降回 hi-res。补全 `Q000`(臻品母带 2.0) / `RS01`(臻品音质 2.0)
+- 渲染层 `QQ_LEVELS` 白名单缺 `jymaster`/`sky`，档位声明被丢成 `undefined`；`jyeffect` 对齐到 `sky`
+- 模板抽到 `shared/utils/qqQuality.ts`（6 个单测）
+
+**跨平台档位谎报修正**
+
+- 酷我 antiserver 对所有无损档都只返回 `format=flac`，却照抄请求档位回传（会把 FLAC 谎称成母带）。现在最高只声明 `lossless`
+- 酷狗官方最高 `high`(Hi-Res)，`QUALITY_MAP` 缺高档位会落到 `?? "320"` 降成 mp3，已显式映射
+
+> ⚠️ 本版需实机验证的三项：换源重试（真实音源）、音质不降级（真实下载一首只有无损的母带歌）、QQ `Q000`/`RS01`（取决于账号权益）。两个前缀按公开资料补全，未在真实账号上验证过能否取到。
+
+**验证**：typecheck 0 错、401 个测试全过、包内 asar 特征标记核验通过
+
+---
+
+## 1.1.0-beta.6 ~ beta.9（2026-11-08 ~ 11-17）
+
+**beta.9**：下载音质不降级 + 失败原因可见 + QQ 高档位链路（内容已并入上方 beta.10 说明，beta.10 追加了布局修正与长列表优化）
+
+**beta.8**：主题切换按钮独立放到头像左侧并从设置菜单移除；移除跟随系统模式，只保留浅色/深色（含旧存档 `mode: "system"` 迁移）
+
+**beta.7**：液体主题切换**消除长帧**——覆盖层加 `will-change: clip-path` 提前提升合成层、去掉反向起作用的 `contain: strict`、克隆树冻结改用单条 CSS 规则批量处理、主题提交与首次合成拆到双 rAF。实测长帧 3→0、最差帧 59.3ms→21ms
+
+**beta.6**：修复更新器发布源与问题反馈入口仍指向上游仓库（包内 `app-update.yml` 的 `owner/repo` 写的是 `SPlayer-Dev/SPlayer-Next`）
+
+**beta.6 主要特性：液体主题切换**
+
+- `src/utils/liquid/` 四阶段（倒出/飞溅/液面上涨/覆盖）联合轮廓 → 单条 SVG path
+- `src/composables/useLiquidTheme.ts`：**反向快照法**——克隆 `#app` 冻结旧主题（固化 `:root` 内联 `--s-*` 变量 + `dark` class + `appearance-style` 补丁），新主题立即作用于实时 DOM，`clip-path: evenodd(整屏 rect, 液体 path)` 反相裁剪旧层
+- 等价视觉效果，但只有一份交互树、零重复 ID、零事件/IPC 重复绑定
+- Web Audio 本地合成四段音效（默认关闭、音量记忆、仅用户手势解锁）
+- 外观设置新增「液体主题切换 / 主题切换音效 / 音效音量」三项
 
 ---
 
