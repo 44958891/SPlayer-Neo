@@ -133,12 +133,15 @@ describe("切歌消费真实预载", () => {
       fromCache: false,
       provider: "official",
     });
-    mocks.load.mockResolvedValueOnce({ success: false, error });
+    // 每次加载都失败（真实环境下换源后同样会失败），而不是仅第一次
+    mocks.load.mockResolvedValue({ success: false, error });
     const timer = vi.spyOn(globalThis, "setTimeout");
     const { playFrom } = await import("./index");
     const { handleError } = await import("@/utils/errors");
     await playFrom([mocks.track as Track]);
-    expect(mocks.resolve).toHaveBeenCalledOnce();
+    // 网络类错误现在会继续换源（官方 → 插件），因此解析可能被调用多次；
+    // 真正要守住的是：错误只上报一次，且不触发自动跳曲定时器
+    expect(mocks.resolve.mock.calls.length).toBeGreaterThanOrEqual(1);
     expect(handleError).toHaveBeenCalledExactlyOnceWith(error);
     expect(timer.mock.calls.some((call) => call[1] === 1000)).toBe(false);
     expect(mocks.status.state).toBe("idle");
