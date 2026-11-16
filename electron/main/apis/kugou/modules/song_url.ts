@@ -10,7 +10,15 @@ import { coreLog } from "@main/utils/logger";
 const QUALITY_LEVELS = ["128", "320", "flac", "high"] as const;
 type QualityLevel = (typeof QUALITY_LEVELS)[number];
 
+/**
+ * 宿主档位 → 酷狗官方接口档位。
+ * 酷狗官方最高只到 `high`（Hi-Res，24bit/96kHz），无母带/环绕档；
+ * jymaster/sky/jyeffect 显式对齐到 high，避免落到 `?? "320"` 降成 mp3。
+ */
 const QUALITY_MAP: Record<string, QualityLevel> = {
+  jymaster: "high",
+  sky: "high",
+  jyeffect: "high",
   "hi-res": "high",
   lossless: "flac",
   hq: "320",

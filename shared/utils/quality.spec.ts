@@ -121,3 +121,44 @@ describe("QUALITY_ORDER / qualityRank", () => {
     expect(qualityRank("lossless")).toBeLessThan(qualityRank("jymaster"));
   });
 });
+
+/**
+ * 下载音质不降级：用户选了高档位、音源只给低档位时必须判定不达标，
+ * 下载管线据此报 DOWNLOAD_QUALITY_NOT_MET，而不是静默保存低音质文件。
+ */
+describe("levelMeets：所选档位未被满足时必须为 false", () => {
+  const mk = (codec: string, sampleRate: number, bitsPerSample: number, bitRate: number) =>
+    ({ codec, sampleRate, bitsPerSample, bitRate, channels: 2 }) as const;
+
+  const MASTER = mk("flac", 192000, 24, 4608000);
+  const HIRES = mk("flac", 96000, 24, 2304000);
+  const LOSSLESS = mk("flac", 44100, 16, 1000000);
+  const HQ = mk("mp3", 44100, 16, 320000);
+
+  it("选母带时，Hi-Res / 无损 / 320k 都不算达标", () => {
+    expect(levelMeets(MASTER, "jymaster")).toBe(true);
+    expect(levelMeets(HIRES, "jymaster")).toBe(false);
+    expect(levelMeets(LOSSLESS, "jymaster")).toBe(false);
+    expect(levelMeets(HQ, "jymaster")).toBe(false);
+  });
+
+  it("选 Hi-Res 时，无损与 320k 不算达标，母带达标", () => {
+    expect(levelMeets(HIRES, "hi-res")).toBe(true);
+    expect(levelMeets(LOSSLESS, "hi-res")).toBe(false);
+    expect(levelMeets(HQ, "hi-res")).toBe(false);
+    expect(levelMeets(MASTER, "hi-res")).toBe(true);
+  });
+
+  it("选无损时，320k 不算达标", () => {
+    expect(levelMeets(LOSSLESS, "lossless")).toBe(true);
+    expect(levelMeets(HQ, "lossless")).toBe(false);
+  });
+
+  it("三平台母带档统一映射到宿主 jymaster，判定口径一致无冲突", () => {
+    // QQ 臻品母带 2.0 / 网易超清母带 / 酷我大师 均落到 jymaster，
+    // 谁取到的文件达标以实际位深+采样率为准，而不是以平台声明为准
+    expect(qualityRank("jymaster")).toBeGreaterThan(qualityRank("hi-res"));
+    expect(levelOfQuality(MASTER)).toBe("jymaster");
+    expect(levelOfQuality(LOSSLESS)).not.toBe("jymaster");
+  });
+});

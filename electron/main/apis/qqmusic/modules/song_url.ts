@@ -8,31 +8,7 @@ import { getQQMusicCookies, getQQMusicUin, refreshQMCredential } from "../core/r
 import { sessionToCookieHeader } from "../core/credential";
 import { coreLog } from "@main/utils/logger";
 import type { QMModule } from "../core/types";
-
-interface QualityCandidate {
-  prefix: string;
-  ext: string;
-  level: string;
-  label: string;
-}
-
-const QQ_QUALITY_CANDIDATE_TEMPLATES: QualityCandidate[] = [
-  { prefix: "AI00", ext: ".flac", level: "hi-res", label: "Hi-Res FLAC" },
-  { prefix: "F000", ext: ".flac", level: "lossless", label: "无损 FLAC" },
-  { prefix: "M800", ext: ".mp3", level: "hq", label: "320k MP3" },
-  { prefix: "M500", ext: ".mp3", level: "sq", label: "128k MP3" },
-  { prefix: "C400", ext: ".m4a", level: "lq", label: "标准 AAC" },
-];
-
-/** 根据用户的首选音质生成顺位候选列表 */
-const getQualityCandidates = (preferredLevel: string): QualityCandidate[] => {
-  const target = String(preferredLevel || "hq").toLowerCase();
-  const targetIndex = QQ_QUALITY_CANDIDATE_TEMPLATES.findIndex((t) => t.level === target);
-  if (targetIndex >= 0) {
-    return QQ_QUALITY_CANDIDATE_TEMPLATES.slice(targetIndex);
-  }
-  return QQ_QUALITY_CANDIDATE_TEMPLATES;
-};
+import { getQQQualityCandidates } from "@shared/utils/qqQuality";
 
 const WEB_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -72,7 +48,7 @@ const songUrl: QMModule = async (params) => {
   const fileBase = mediaMid || `${mid}${mid}`;
 
   const targetLevel = String(params.level || "hq");
-  const candidates = getQualityCandidates(targetLevel);
+  const candidates = getQQQualityCandidates(targetLevel);
   const filenames = candidates.map((c) => `${c.prefix}${fileBase}${c.ext}`);
 
   const requestUrl = async () => {

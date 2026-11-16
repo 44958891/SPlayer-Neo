@@ -15,8 +15,20 @@ interface SongUrlData {
   isFallback?: boolean;
 }
 
-/** 主进程回传的直链档位（与候选模板一致，可直接当宿主档位使用） */
-const QQ_LEVELS: ReadonlySet<string> = new Set(["hi-res", "lossless", "hq", "sq", "lq"]);
+/**
+ * 主进程回传的直链档位（与候选模板一致，可直接当宿主档位使用）。
+ * 必须包含 jymaster / sky——否则臻品母带 2.0 的档位声明会被丢成 undefined，
+ * 上层按「档位未知」处理，既无法判断是否达标也无法正确展示。
+ */
+const QQ_LEVELS: ReadonlySet<string> = new Set([
+  "jymaster",
+  "sky",
+  "hi-res",
+  "lossless",
+  "hq",
+  "sq",
+  "lq",
+]);
 
 interface SongUrlResponse {
   code: number;

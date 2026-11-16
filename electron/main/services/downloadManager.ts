@@ -386,11 +386,22 @@ const runTask = async (
     const replaceSource =
       req.replaceSourcePath && fs.existsSync(req.replaceSourcePath) ? req.replaceSourcePath : null;
     const probedLevel = replaceSource ? await probeFileLevel(replaceSource) : null;
-    const originalLevel = replaceSource ? (req.minLevel ?? probedLevel) : null;
+    /**
+     * 落盘档位下限：
+     * - 升级任务：不能低于原文件（保持"只升不降"）
+     * - 普通下载：必须达到用户所选档位——宁可在下载页报错，也不静默降级成低音质
+     *   （此前普通下载传 null，档位校验被整个跳过，选了 Master 拿到 Lossless 也会成功）
+     * - 流媒体：取流地址的档位由服务端决定，不做限制
+     */
+    const minLevel: QualityLevel | null = replaceSource
+      ? (req.minLevel ?? probedLevel)
+      : req.track.source === "streaming"
+        ? null
+        : req.qualityLevel;
 
     // 先校验候选文件再落位覆盖：无效数据（音源加密/损坏）必拒；
-    // 升级任务实际档位低于原文件也拒。杜绝"先覆盖再发现是垃圾"导致原文件丢失
-    const quality = await verifyDownloadCandidate(partWithExt, originalLevel);
+    // 实际档位低于下限也拒。杜绝"先覆盖再发现是垃圾"导致原文件丢失
+    const quality = await verifyDownloadCandidate(partWithExt, minLevel);
     verifiedPath = null;
 
     // 扩展名以解码器实测编解码器为准：插件声明格式常缺失、CDN 的 Content-Type
@@ -478,12 +489,14 @@ const probeFileLevel = async (filePath: string): Promise<QualityLevel | null> =>
 /**
  * 校验下载候选文件并返回其真实音质
  * - 解析不出编解码器（音源返回加密/损坏数据）→ DOWNLOAD_INVALID_FILE
- * - 实际档位低于原文件档位（升级场景）→ DOWNLOAD_QUALITY_NOT_MET
- * @param originalLevel - 原文件档位；普通下载传 null
+ * - 实际档位低于要求下限 → DOWNLOAD_QUALITY_NOT_MET
+ * @param minLevel - 允许落盘的最低档位。
+ *   升级场景传「请求显式下限 ?? 原文件档位」；普通下载传「请求档位」。
+ *   传 null 才表示不做档位限制（仅用于流媒体等无法声明档位的来源）。
  */
 const verifyDownloadCandidate = async (
   filePath: string,
-  originalLevel: QualityLevel | null,
+  minLevel: QualityLevel | null,
 ): Promise<AudioQuality> => {
   const quality = await readFileQuality(filePath);
   if (!quality) {
@@ -491,10 +504,15 @@ const verifyDownloadCandidate = async (
       errorCode: ErrorCode.DOWNLOAD_INVALID_FILE,
     });
   }
-  if (originalLevel && !levelMeets(quality, originalLevel)) {
+  if (minLevel && !levelMeets(quality, minLevel)) {
+    // 实际档位 / 要求档位都带进 message，供下载页展示具体原因
     throw Object.assign(
-      new Error(`quality below original: ${levelOfQuality(quality)} < ${originalLevel}`),
-      { errorCode: ErrorCode.DOWNLOAD_QUALITY_NOT_MET },
+      new Error(`quality below required: ${levelOfQuality(quality)} < ${minLevel}`),
+      {
+        errorCode: ErrorCode.DOWNLOAD_QUALITY_NOT_MET,
+        actualLevel: levelOfQuality(quality),
+        requiredLevel: minLevel,
+      },
     );
   }
   return quality;

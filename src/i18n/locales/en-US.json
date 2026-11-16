@@ -715,6 +715,26 @@
       "failed": "Failed",
       "canceled": "Canceled",
       "interrupted": "Interrupted"
+    },
+    "failReason": {
+      "DOWNLOAD_QUALITY_NOT_MET": "No version available at the selected quality (only lower quality returned), file not saved",
+      "DOWNLOAD_INVALID_FILE": "The source returned an invalid or encrypted file",
+      "SOURCE_PROBE_REJECTED": "Source only offers a preview clip, or the link has expired",
+      "NO_PLUGIN_AVAILABLE": "No music source plugin available",
+      "URL_RESOLVE_FAILED": "No source could provide a download URL",
+      "NETWORK_ERROR": "Network connection failed",
+      "NETWORK_TIMEOUT": "Source response timed out",
+      "NETEASE_VIP_REQUIRED": "This song requires membership or purchase",
+      "NETEASE_TRIAL_DISABLED": "This song is preview-only",
+      "NETEASE_UNAVAILABLE": "No available source for this song",
+      "NETEASE_LOGIN_EXPIRED": "Login has expired",
+      "FILE_NOT_FOUND": "Target file missing or not writable",
+      "FILE_NO_AUDIO_STREAM": "No audio stream in the file",
+      "FILE_DECODE_ERROR": "Audio decoding failed",
+      "TAG_WRITE_FAILED": "Failed to write track tags",
+      "DEVICE_NOT_FOUND": "No audio output device found",
+      "DEVICE_INIT_FAILED": "Failed to initialize audio device",
+      "UNKNOWN": "Unknown reason"
     }
   },
   "daily": {

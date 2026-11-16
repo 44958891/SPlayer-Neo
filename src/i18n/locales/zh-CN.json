@@ -715,6 +715,26 @@
       "failed": "失败",
       "canceled": "已取消",
       "interrupted": "已中断"
+    },
+    "failReason": {
+      "DOWNLOAD_QUALITY_NOT_MET": "所选音质没有可用版本（实际只拿到更低音质），未保存文件",
+      "DOWNLOAD_INVALID_FILE": "音源返回的文件无效或已加密",
+      "SOURCE_PROBE_REJECTED": "音源只提供试听片段或链接已失效",
+      "NO_PLUGIN_AVAILABLE": "没有可用的音源插件",
+      "URL_RESOLVE_FAILED": "所有音源都无法取得下载地址",
+      "NETWORK_ERROR": "网络连接失败",
+      "NETWORK_TIMEOUT": "音源响应超时",
+      "NETEASE_VIP_REQUIRED": "该歌曲需要会员或单独购买",
+      "NETEASE_TRIAL_DISABLED": "该歌曲仅提供试听",
+      "NETEASE_UNAVAILABLE": "该歌曲暂无可用音源",
+      "NETEASE_LOGIN_EXPIRED": "登录已失效",
+      "FILE_NOT_FOUND": "目标文件不存在或无法写入",
+      "FILE_NO_AUDIO_STREAM": "文件中没有音频流",
+      "FILE_DECODE_ERROR": "音频解码失败",
+      "TAG_WRITE_FAILED": "写入歌曲标签失败",
+      "DEVICE_NOT_FOUND": "未找到音频输出设备",
+      "DEVICE_INIT_FAILED": "音频设备初始化失败",
+      "UNKNOWN": "未知原因"
     }
   },
   "daily": {

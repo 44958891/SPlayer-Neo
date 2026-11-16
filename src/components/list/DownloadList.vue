@@ -11,6 +11,7 @@ import QualityTag from "@/components/ui/QualityTag.vue";
 import { formatTime } from "@/utils/time";
 import { formatFileSize } from "@/utils/format";
 import * as player from "@/core/player";
+import i18n from "@/i18n";
 import IconLucideLoaderCircle from "~icons/lucide/loader-circle";
 import IconLucideDownload from "~icons/lucide/download";
 import IconLucidePlay from "~icons/lucide/play";
@@ -44,6 +45,18 @@ const STATUS_KEY: Record<DownloadStatus, string> = {
 
 const isError = (taskStatus: DownloadStatus): boolean =>
   taskStatus === "failed" || taskStatus === "canceled" || taskStatus === "interrupted";
+
+/**
+ * 失败原因文案：把任务携带的 errorCode 映射成具体说明，
+ * 让用户能区分「无版权」「仅试听」「音质不达标」「网络问题」等情况，
+ * 而不是只看到一句笼统的「下载失败」。
+ */
+const failReason = (task: DownloadTask): string => {
+  if (task.status !== "failed" || !task.errorCode) return "";
+  const g = i18n.global;
+  const key = `download.failReason.${task.errorCode}`;
+  return g.te(key) ? g.t(key) : g.t("download.failReason.UNKNOWN");
+};
 
 /** 已完成且文件就绪（可播放） */
 const isDone = (task: DownloadTask): boolean => task.status === "done" && !!task.filePath;
@@ -233,8 +246,14 @@ defineExpose({ playAll });
                 {{ percent(item) }}%
               </span>
             </div>
-            <span v-else class="text-sm text-on-surface-variant/60">
+            <span
+              v-else
+              class="text-sm text-on-surface-variant/60"
+              :class="failReason(item) && 'text-red-500/80 dark:text-red-400/80'"
+              :title="failReason(item) || undefined"
+            >
               {{ t(STATUS_KEY[item.status]) }}
+              <template v-if="failReason(item)">· {{ failReason(item) }}</template>
             </span>
           </div>
           <!-- 大小 -->
