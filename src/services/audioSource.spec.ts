@@ -13,7 +13,10 @@ const mocks = vi.hoisted(() => ({
   lookup: vi.fn(),
   cacheLookup: vi.fn(),
   settings: {
-    player: { songLevel: "hq" as string, allowTrialPlay: false },
+    // songLevel 走 getter 动态读 mocks.songLevel，测试内改档位即时生效
+    get player() {
+      return { songLevel: mocks.songLevel, allowTrialPlay: false };
+    },
     system: { cache: { songCache: { enabled: false } } },
   },
 }));

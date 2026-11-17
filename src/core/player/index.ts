@@ -335,10 +335,13 @@ const loadTrackSourceWithFallback = async (
      * 网络类错误（NETWORK_ERROR / NETWORK_TIMEOUT）默认不换源：
      * 这类失败多半是全局网络问题，逐个源重试只会拖慢跳曲。
      *
-     * 但有一类场景必须继续兜底：官方直链拉流失败（CDN 失效、地区限制、
-     * 单曲不可用），此时插件往往还能给出可用地址。判据是「还有没试过的
-     * 其他来源」——markRetryableSourceFailure 会消费掉当前 provider，
-     * 只要它之后还能标记出可换的目标，就允许对网络错误再试一次。
+     * 两类场景必须继续兜底：
+     * 1. 已下载文件失效（provider === "download"）：文件可能已被移动/删除，
+     *    无条件重新解析一次在线地址，不受错误码限制
+     * 2. 官方直链拉流失败（CDN 失效、地区限制、单曲不可用），此时插件往往
+     *    还能给出可用地址。判据是「还有没试过的其他来源」——
+     *    markRetryableSourceFailure 会消费掉当前 provider，只要它之后还能
+     *    标记出可换的目标，就允许对网络错误再试一次。
      * 由于每个 provider 只会被消费一次，循环天然有上限，不会无限重试。
      */
     // 失败码（成功时为 undefined），后续判断统一用 errorCode 避免联合类型收窄问题
@@ -346,7 +349,10 @@ const loadTrackSourceWithFallback = async (
     const isNetworkFailure =
       errorCode === ErrorCode.NETWORK_ERROR || errorCode === ErrorCode.NETWORK_TIMEOUT;
     const shouldTryNextSource =
-      retryOnAnyFailure || Boolean(errorCode && isSkippableError(errorCode)) || isNetworkFailure;
+      retryOnAnyFailure ||
+      resolved.provider === "download" ||
+      Boolean(errorCode && isSkippableError(errorCode)) ||
+      isNetworkFailure;
     const canRetry =
       !result.ok && shouldTryNextSource && markRetryableSourceFailure(resolved, retry);
     if (canRetry) continue;

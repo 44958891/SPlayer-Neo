@@ -13,7 +13,8 @@ describe("下载记录精确查询", () => {
     state.db.exec(`CREATE TABLE download_tasks (
       task_id TEXT PRIMARY KEY, track_json TEXT NOT NULL, quality_level TEXT NOT NULL,
       status TEXT NOT NULL, received INTEGER, total INTEGER, file_path TEXT,
-      error_code TEXT, tag_warning INTEGER, created_at INTEGER, finished_at INTEGER
+      error_code TEXT, tag_warning INTEGER, probed INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER, finished_at INTEGER
     )`);
   });
   afterEach(() => state.db?.close());
