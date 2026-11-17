@@ -38,6 +38,7 @@ export const getCollectionShareUrl = (collection: Collection | null | undefined)
       kuwo: `https://www.kuwo.cn/album_detail/${collection.id}`,
       migu: null,
       streaming: null,
+      plugin: null,
       local: null,
     },
     playlist: {
@@ -47,6 +48,7 @@ export const getCollectionShareUrl = (collection: Collection | null | undefined)
       kuwo: `https://www.kuwo.cn/playlist_detail/${collection.id}`,
       migu: null,
       streaming: null,
+      plugin: null,
       local: null,
     },
     radio: {
@@ -56,6 +58,7 @@ export const getCollectionShareUrl = (collection: Collection | null | undefined)
       kuwo: null,
       migu: null,
       streaming: null,
+      plugin: null,
       local: null,
     },
     cloud: {
@@ -65,6 +68,7 @@ export const getCollectionShareUrl = (collection: Collection | null | undefined)
       kuwo: null,
       migu: null,
       streaming: null,
+      plugin: null,
       local: null,
     },
   };

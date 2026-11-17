@@ -8,19 +8,23 @@
  */
 
 import { ipcMain, dialog } from "electron";
-import type { PluginInfo, PluginHealthEntry } from "@shared/types/plugin";
+import type { PluginInfo, PluginSearchArgs, PluginHealthEntry } from "@shared/types/plugin";
 import { pluginRegistry } from "@main/plugins/registry";
 import { resolveUrl, invokeMenu } from "@main/plugins/router";
 import { probeAudioUrl } from "@main/plugins/probe";
 import { checkSourcePoint, type CheckPointArgs } from "@main/plugins/sourceCheck";
 import { healthSnapshot, healthLookup, healthReport, healthClear } from "@main/plugins/health";
 import { matchLyric, matchCover } from "@main/plugins/metadata";
+import { searchPluginTracks } from "@main/plugins/search";
 import { fetchScript, fetchMarket } from "@main/plugins/net";
 import { broadcast } from "@main/utils/broadcast";
 import { coreLog } from "@main/utils/logger";
 
 export const registerPluginIpc = (): void => {
-  ipcMain.handle("plugin:list", (): PluginInfo[] => pluginRegistry.listInfo());
+  ipcMain.handle("plugin:list", async (_event, waitForPluginId?: string): Promise<PluginInfo[]> => {
+    if (waitForPluginId) await pluginRegistry.getRuntime(waitForPluginId)?.initialLoad;
+    return pluginRegistry.listInfo();
+  });
 
   ipcMain.handle("plugin:install", async (_evt, filePath: string) => {
     try {
@@ -132,6 +136,8 @@ export const registerPluginIpc = (): void => {
       };
     }
   });
+
+  ipcMain.handle("plugin:search", (_event, args: PluginSearchArgs) => searchPluginTracks(args));
 
   ipcMain.handle("plugin:resolveUrl", async (_evt, args) => {
     return resolveUrl(args);

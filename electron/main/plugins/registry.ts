@@ -91,6 +91,9 @@ const isNewerVersion = (remote: string, current: string): boolean => {
 };
 
 interface PluginRuntime {
+  hostSession?: AbortController;
+  /** 首次启动任务，恢复独立来源曲目时只等待所属插件 */
+  initialLoad?: Promise<void>;
   manifest: PluginManifest;
   enabled: boolean;
   status: PluginStatus;
@@ -185,7 +188,7 @@ class PluginRegistry extends EventEmitter {
 
     // 启动已启用的插件
     for (const rt of this.runtimes.values()) {
-      if (rt.enabled) this.start(rt).catch(() => {});
+      if (rt.enabled) rt.initialLoad = this.start(rt).catch(() => {});
     }
     // 启动时静默检查一遍更新（不阻塞启动）
     void this.checkAllUpdates();

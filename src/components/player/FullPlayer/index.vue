@@ -135,6 +135,7 @@ const canDownload = computed(
   () =>
     !!displayTrack.value &&
     displayTrack.value.source !== "local" &&
+    displayTrack.value.source !== "plugin" &&
     settings.system.download.enabled,
 );
 
@@ -356,6 +357,7 @@ const showComments = (): void => {
               <template #icon><IconLucideChevronDown /></template>
             </SButton>
             <SButton
+              v-if="displayTrack?.source !== 'plugin'"
               type="cover"
               variant="ghost"
               size="large"

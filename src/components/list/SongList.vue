@@ -128,13 +128,13 @@ const localMatchOf = (track: Track): Track | null =>
 
 /** 专辑是否可跳转：本地不要求 id，其他源需要 album.id */
 const isAlbumLinkable = (item: Track): boolean => {
-  if (!item.album?.name) return false;
+  if (!item.album?.name || item.source === "plugin") return false;
   return item.source === "local" || !!item.album.id;
 };
 
 /** 歌手是否可跳转：本地不要求 id，其他源需要 artist.id */
 const isArtistLinkable = (item: Track, artist: Artist): boolean => {
-  if (!artist.name) return false;
+  if (!artist.name || item.source === "plugin") return false;
   return item.source === "local" || !!artist.id;
 };
 
@@ -406,7 +406,7 @@ defineExpose({
                 <span>{{ t("songList.batch.addToQueue") }}</span>
               </SButton>
               <SButton
-                v-if="source !== 'local' && settings.system.download.enabled"
+                v-if="source !== 'local' && source !== 'plugin' && settings.system.download.enabled"
                 variant="ghost"
                 size="small"
                 :disabled="batch.selectedCount.value === 0"
@@ -709,9 +709,9 @@ defineExpose({
                   {{ item.album?.name || t("collection.unknownAlbum") }}
                 </span>
               </div>
-              <!-- 红心：批量模式下隐藏，其余始终显示 -->
+              <!-- 收藏 -->
               <div
-                v-if="!batch.active.value"
+                v-if="!batch.active.value && item.source !== 'plugin'"
                 class="w-7 shrink-0 flex items-center justify-center"
                 @click.stop
               >

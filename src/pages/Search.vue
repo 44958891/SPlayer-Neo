@@ -9,12 +9,14 @@ import SongList from "@/components/list/SongList.vue";
 import CoverList from "@/components/list/CoverList.vue";
 import * as player from "@/core/player";
 import { useStatusStore } from "@/stores/status";
+import { usePluginsStore } from "@/stores/plugins";
 import { navigateToAlbum, navigateToArtist, navigateToPlaylist } from "@/utils/navigate";
 
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const status = useStatusStore();
+const plugins = usePluginsStore();
 
 type TabKey = "songs" | "albums" | "artists" | "playlists";
 
@@ -28,18 +30,67 @@ const activeTab = ref<TabKey>("songs");
 /** 当前生效的关键词 */
 const keyword = ref("");
 
-const tabs = computed(() => [
-  { key: "songs", label: t("search.tabs.songs") },
-  { key: "albums", label: t("search.tabs.albums") },
-  { key: "artists", label: t("search.tabs.artists") },
-  { key: "playlists", label: t("search.tabs.playlists") },
-]);
+const tabs = computed(() =>
+  [
+    { key: "songs", label: t("search.tabs.songs") },
+    { key: "albums", label: t("search.tabs.albums") },
+    { key: "artists", label: t("search.tabs.artists") },
+    { key: "playlists", label: t("search.tabs.playlists") },
+  ].filter((tab) => !pluginSelection.value || tab.key === "songs"),
+);
 
 const platformTabs = ALL_PLATFORMS.map((key) => ({ key, label: PLATFORM_SHORT_NAME[key] }));
+const pluginSources = computed(() =>
+  plugins.list.flatMap((info) => {
+    if (!info.enabled || info.status.state !== "ready") return [];
+    return Object.entries(info.status.sources)
+      .filter(
+        ([source, capability]) =>
+          !["wy", "tx", "kg"].includes(source) &&
+          capability.actions.includes("musicSearch") &&
+          capability.actions.includes("musicUrl"),
+      )
+      .map(([source, capability]) => ({
+        value: JSON.stringify([info.manifest.id, source]),
+        label:
+          capability.name === info.manifest.name
+            ? capability.name
+            : `${capability.name} · ${info.manifest.name}`,
+        pluginId: info.manifest.id,
+        source,
+      }));
+  }),
+);
+const pluginSelection = computed(() =>
+  typeof route.query.plugin === "string" && typeof route.query.source === "string"
+    ? { pluginId: route.query.plugin, source: route.query.source }
+    : null,
+);
+const selectedSource = computed(() =>
+  pluginSelection.value
+    ? JSON.stringify([pluginSelection.value.pluginId, pluginSelection.value.source])
+    : status.searchPlatform,
+);
+const pluginAvailable = computed(
+  () =>
+    !pluginSelection.value ||
+    pluginSources.value.some((source) => source.value === selectedSource.value),
+);
+const sourceOptions = computed(() => {
+  const options: { value: string; label: string }[] = [
+    ...platformTabs.map(({ key, label }) => ({ value: key, label })),
+    ...pluginSources.value,
+  ];
+  if (pluginSelection.value && !pluginAvailable.value) {
+    options.push({ value: selectedSource.value, label: pluginSelection.value.source });
+  }
+  return options;
+});
 
 interface TabState<T> {
   items: T[];
   total: number;
+  page: number;
   hasMore: boolean;
   loaded: boolean;
   loading: boolean;
@@ -49,18 +100,20 @@ interface TabState<T> {
 const createState = <T,>(): TabState<T> => ({
   items: [],
   total: 0,
+  page: 0,
   hasMore: false,
   loaded: false,
   loading: false,
   loadingMore: false,
 });
 
-const states = reactive({
-  songs: createState<Track>(),
-  albums: createState<CoverItem>(),
-  artists: createState<CoverItem>(),
-  playlists: createState<CoverItem>(),
-});
+const states = {
+  songs: shallowReactive(createState<Track>()),
+  albums: shallowReactive(createState<CoverItem>()),
+  artists: shallowReactive(createState<CoverItem>()),
+  playlists: shallowReactive(createState<CoverItem>()),
+};
+let searchGeneration = 0;
 
 const error = ref("");
 
@@ -79,6 +132,11 @@ const fetchers = {
  */
 const fetchTab = async (tab: TabKey, append: boolean): Promise<void> => {
   if (!keyword.value) return;
+  if (!pluginAvailable.value) {
+    error.value = t("errors.NO_PLUGIN_AVAILABLE");
+    return;
+  }
+  const generation = searchGeneration;
   const state = states[tab];
   if (append) {
     if (!state.loaded || state.loadingMore || !state.hasMore) return;
@@ -90,33 +148,45 @@ const fetchTab = async (tab: TabKey, append: boolean): Promise<void> => {
   error.value = "";
   try {
     const offset = append ? state.items.length : 0;
-    const result = await (fetchers[tab] as typeof searchSongs)(
-      status.searchPlatform,
-      keyword.value,
-      offset,
-      PAGE_SIZE,
-    );
+    const page = append ? state.page + 1 : 1;
+    const selection = pluginSelection.value;
+    const result = selection
+      ? await window.api.plugins.search({
+          ...selection,
+          keyword: keyword.value,
+          page,
+          limit: PAGE_SIZE,
+        })
+      : await (fetchers[tab] as typeof searchSongs)(
+          status.searchPlatform,
+          keyword.value,
+          offset,
+          PAGE_SIZE,
+        );
+    if (generation !== searchGeneration) return;
     const items = result.items.map((item) => markRaw(item));
-    if (append) {
-      (state.items as Track[]).push(...(items as Track[]));
-    } else {
-      state.items = items as Track[];
-    }
+    state.items = append ? ([...state.items, ...items] as Track[]) : (items as Track[]);
+    state.page = page;
     state.total = result.total;
     state.hasMore = result.hasMore;
     state.loaded = true;
   } catch (err) {
+    if (generation !== searchGeneration) return;
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
-    state.loading = false;
-    state.loadingMore = false;
+    if (generation === searchGeneration) {
+      state.loading = false;
+      state.loadingMore = false;
+    }
   }
 };
 
 const resetStates = (): void => {
+  searchGeneration++;
   (Object.keys(states) as TabKey[]).forEach((tab) => {
     states[tab].items = [];
     states[tab].total = 0;
+    states[tab].page = 0;
     states[tab].hasMore = false;
     states[tab].loaded = false;
     states[tab].loading = false;
@@ -126,14 +196,17 @@ const resetStates = (): void => {
 };
 
 let lastLoadedKeyword = "";
-let lastLoadedPlatform = status.searchPlatform;
+let lastLoadedSource = "";
+let lastAvailable = true;
 
 /** 仅在当前处于搜索路由时同步路由参数，避免离开到其他页面时因 query 为空而误清空状态 */
 const syncFromRoute = (): void => {
   if (route.name !== "search") return;
   const q = typeof route.query.q === "string" ? route.query.q.trim() : "";
   const tab =
-    typeof route.query.tab === "string" && (TAB_KEYS as readonly string[]).includes(route.query.tab)
+    !pluginSelection.value &&
+    typeof route.query.tab === "string" &&
+    (TAB_KEYS as readonly string[]).includes(route.query.tab)
       ? (route.query.tab as TabKey)
       : "songs";
 
@@ -141,11 +214,13 @@ const syncFromRoute = (): void => {
   keyword.value = q;
 
   const keywordChanged = q !== lastLoadedKeyword;
-  const platformChanged = status.searchPlatform !== lastLoadedPlatform;
+  const sourceChanged =
+    selectedSource.value !== lastLoadedSource || pluginAvailable.value !== lastAvailable;
 
-  if (keywordChanged || platformChanged) {
+  if (keywordChanged || sourceChanged) {
     lastLoadedKeyword = q;
-    lastLoadedPlatform = status.searchPlatform;
+    lastLoadedSource = selectedSource.value;
+    lastAvailable = pluginAvailable.value;
     resetStates();
     if (q) fetchTab(tab, false);
   } else if (q && !states[tab].loaded) {
@@ -153,16 +228,30 @@ const syncFromRoute = (): void => {
   }
 };
 
-watch(() => [route.name, route.query.q, route.query.tab, status.searchPlatform], syncFromRoute, {
-  immediate: true,
-});
+watch(
+  () => [route.name, route.query.q, route.query.tab, selectedSource.value, pluginAvailable.value],
+  syncFromRoute,
+  {
+    immediate: true,
+  },
+);
 
 const onTabSwitch = (key: string): void => {
   router.replace({ query: { ...route.query, tab: key } });
 };
 
-const onPlatformSwitch = (key: string): void => {
-  status.searchPlatform = key as Platform;
+const onPlatformSwitch = (key: string | number | boolean): void => {
+  const source = pluginSources.value.find((item) => item.value === key);
+  if (!source && !(ALL_PLATFORMS as readonly unknown[]).includes(key)) return;
+  if (!source) status.searchPlatform = key as Platform;
+  router.replace({
+    query: {
+      ...route.query,
+      plugin: source?.pluginId,
+      source: source?.source,
+      tab: source ? "songs" : route.query.tab,
+    },
+  });
 };
 
 /** 失败后重试加载当前 tab */
@@ -193,8 +282,8 @@ const songItems = computed(() => states.songs.items);
 
 /** 搜索页播放来源上下文 */
 const playbackContext = computed<PlaybackContext>(() => ({
-  provider: status.searchPlatform,
-  originId: `search:${status.searchPlatform}:${keyword.value}`,
+  provider: pluginSelection.value ? "plugin" : status.searchPlatform,
+  originId: `search:${selectedSource.value}:${keyword.value}`,
   originType: "page",
   originName: keyword.value ? `${t("search.title")}: ${keyword.value}` : t("search.title"),
 }));
@@ -225,9 +314,17 @@ const handlePlayAll = (): void => {
             {{ t("search.titleSuffix") }}
           </span>
         </h1>
-        <!-- 平台切换：宽度按 4 枚标签（NCM/QM/KG/KW）自适应 -->
-        <div class="shrink-0 w-64">
+        <!-- 平台切换：有插件独立音源时下拉选择，否则按 5 枚平台标签（NCM/QM/KG/KW/MG）自适应 -->
+        <div class="shrink-0" :class="pluginSources.length || pluginSelection ? 'w-52' : 'w-64'">
+          <SSelect
+            v-if="pluginSources.length || pluginSelection"
+            :model-value="selectedSource"
+            :options="sourceOptions"
+            round
+            @update:model-value="onPlatformSwitch"
+          />
           <STabs
+            v-else
             :model-value="status.searchPlatform"
             :tabs="platformTabs"
             type="segment"
@@ -305,7 +402,7 @@ const handlePlayAll = (): void => {
       <SongList
         v-if="activeTab === 'songs'"
         :items="states.songs.items"
-        :source="status.searchPlatform"
+        :source="pluginSelection ? 'plugin' : status.searchPlatform"
         :playback-context="playbackContext"
         show-local-badge
         :show-size="false"
