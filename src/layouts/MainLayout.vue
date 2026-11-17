@@ -4,10 +4,12 @@ import { useMediaStore } from "@/stores/media";
 import { useSettingsStore } from "@/stores/settings";
 import { useOrpheusProtocol } from "@/composables/useOrpheusProtocol";
 import { useExternalFileHandler } from "@/composables/useExternalFileHandler";
+import { useResponsiveLayout } from "@/composables/useResponsiveLayout";
 
 const route = useRoute();
 const status = useStatusStore();
 const settings = useSettingsStore();
+const { sidebarCollapsed } = useResponsiveLayout();
 
 // 接入 orpheus 协议唤起与外部音频文件播放
 useOrpheusProtocol();
@@ -87,7 +89,7 @@ const mainMarginClass = computed(() =>
 /** 外层播放条样式 */
 const playerBarWrapperClass = computed(() => {
   const base = "fixed bottom-0 z-50 transition-[left] duration-300 pointer-events-none";
-  const collapsed = appearance.sidebarCollapsed;
+  const collapsed = sidebarCollapsed.value;
   switch (appearance.layoutMode) {
     case "sidebar-full":
       return `${base} ${collapsed ? "left-16" : "left-60"} right-0`;
@@ -120,13 +122,13 @@ const playerBarInnerClass = computed(() => {
     <!-- 侧边栏 -->
     <aside
       class="shrink-0 bg-surface-panel overflow-y-auto z-10 transition-[width,margin] duration-300"
-      :class="[appearance.sidebarCollapsed ? 'w-16' : 'w-60', sidebarClass]"
+      :class="[sidebarCollapsed ? 'w-16' : 'w-60', sidebarClass]"
     >
       <SideBar />
     </aside>
 
     <!-- 右侧主区域 -->
-    <div class="flex-1 flex flex-col min-w-0" :class="mainMarginClass">
+    <div class="flex-1 flex flex-col min-w-0 min-h-0" :class="mainMarginClass">
       <!-- 顶部导航 -->
       <header class="h-16 shrink-0 flex items-center px-3">
         <NavHeader />
