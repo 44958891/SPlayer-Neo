@@ -1,7 +1,7 @@
 import type { Track } from "@shared/types/player";
 import type { QualityLevel } from "@/utils/quality";
 import { isPlatform } from "@shared/types/platform";
-import { useStreamingStore } from "@/stores/streaming";
+import { streamingSourceForTrack } from "@shared/utils/streamingSource";
 import { resolveByPluginBest } from "@/services/audioSource";
 import { ErrorCode } from "@shared/types/errors";
 
@@ -46,10 +46,7 @@ export const resolveDownloadSource = async (
   // 流媒体服务器直接取流地址
   if (track.source === "streaming") {
     try {
-      const url = await useStreamingStore().getStreamUrl(track, {
-        playSessionId: crypto.randomUUID(),
-      });
-      return { ok: true, url };
+      return { ok: true, url: streamingSourceForTrack(track) };
     } catch {
       return { ok: false, errorCode: ErrorCode.NETWORK_ERROR };
     }

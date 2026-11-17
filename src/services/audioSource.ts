@@ -3,7 +3,7 @@ import type { Platform } from "@shared/types/platform";
 import type { PluginQuality } from "@shared/types/plugin";
 import { buildHealthKey, isTimeoutMessage, type PluginHealthEntry } from "@shared/utils/audioProbe";
 import { qualityMeets, qualityRank, type QualityLevel } from "@/utils/quality";
-import { useStreamingStore } from "@/stores/streaming";
+import { streamingSourceForTrack } from "@shared/utils/streamingSource";
 import { useSettingsStore } from "@/stores/settings";
 import { usePluginsStore } from "@/stores/plugins";
 import { useUserStore } from "@/stores/user";
@@ -64,8 +64,6 @@ export interface ResolveTrackSourceOptions {
   skipOfficialOnline?: boolean;
   /** 是否静默解析 */
   silent?: boolean;
-  /** 流媒体 PlaySessionId，用于预载时隔离当前播放会话 */
-  streamingPlaySessionId?: string;
 }
 
 /**
@@ -628,15 +626,9 @@ export const resolveTrackSource = async (
   // 流媒体
   if (track.source === "streaming") {
     try {
-      const store = useStreamingStore();
-      const streamUrl = await store.getStreamUrl(
-        track,
-        options.streamingPlaySessionId
-          ? { playSessionId: options.streamingPlaySessionId }
-          : undefined,
-      );
+      const source = streamingSourceForTrack(track);
       const result: ResolvedTrackSource = {
-        source: streamUrl,
+        source,
         fromCache: false,
         provider: "streaming",
       };
@@ -644,13 +636,10 @@ export const resolveTrackSource = async (
         // 缓存下载用独立 PlaySessionId
         result.cacheRequest = async (preloadId, signal) => {
           try {
-            const cacheUrl = await store.getStreamUrl(track, {
-              playSessionId: crypto.randomUUID(),
-            });
             if (signal?.aborted) return null;
-            return await window.api.cache.song.fetch(cacheKey, "streaming", cacheUrl, preloadId);
+            return await window.api.cache.song.fetch(cacheKey, "streaming", source, preloadId);
           } catch (err) {
-            console.warn("[cache] streaming getStreamUrl failed", err);
+            console.warn("[cache] 流媒体缓存失败", err);
             return null;
           }
         };

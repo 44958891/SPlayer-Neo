@@ -16,6 +16,7 @@ import { broadcast } from "@main/utils/broadcast";
 import { downloadLog } from "@main/utils/logger";
 import { getEngine } from "@main/services/engine";
 import { fetchBytes } from "@main/utils/fetchBytes";
+import { resolveStreamingMediaSource } from "@main/services/streaming/mediaSource";
 import {
   renderDownloadPath,
   dedupePath,
@@ -325,7 +326,17 @@ const runTask = async (
       broadcast("download:resolve", payload);
       Object.assign(req, await resolution);
     }
-    const audioUrl = req.url;
+    const audioUrl =
+      req.track.source === "streaming" && req.track.serverId && req.track.originalId
+        ? (
+            await resolveStreamingMediaSource(
+              req.track.serverId,
+              req.track.originalId,
+              crypto.randomUUID(),
+              controller.signal,
+            )
+          ).url
+        : req.url;
     if (!audioUrl) throw new Error("missing download url");
 
     const downloadDir = req.targetDir ?? getDownloadDir();
