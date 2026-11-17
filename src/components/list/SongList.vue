@@ -6,6 +6,7 @@ import { sortTracks } from "@/utils/trackSort";
 import { useMediaStore } from "@/stores/media";
 import { useStatusStore } from "@/stores/status";
 import { useSettingsStore } from "@/stores/settings";
+import { useDownloadStore } from "@/stores/download";
 import { useTrackMenu } from "@/composables/useTrackMenu";
 import { useMultiSelect } from "@/composables/useMultiSelect";
 import { useDownload } from "@/composables/useDownload";
@@ -18,6 +19,8 @@ import { getQualityLevel } from "@/utils/quality";
 import { buildLocalMatchIndex, findLocalMatch, type LocalMatchIndex } from "@/utils/localMatch";
 import { useLibraryStore } from "@/stores/library";
 import QualityTag from "@/components/ui/QualityTag.vue";
+import STag from "@/components/ui/STag.vue";
+import IconLucideCheck from "~icons/lucide/check";
 import { navigateToAlbum, navigateToArtist } from "@/utils/navigate";
 import type { SVirtualListExposed } from "@/components/ui/SVirtualList.vue";
 import * as player from "@/core/player";
@@ -92,6 +95,7 @@ const media = useMediaStore();
 const status = useStatusStore();
 const settings = useSettingsStore();
 const libraryStore = useLibraryStore();
+const downloadStore = useDownloadStore();
 const fav = useFavorite();
 
 const { isFloatingBar: isFloatingPlayerBar, PLAYER_BAR_GAP } = useFloatingPlayerBar();
@@ -620,6 +624,16 @@ defineExpose({
                     class="text-sm mt-1 truncate flex items-center gap-1"
                     :class="playingId === item.id ? 'text-primary/70' : 'text-on-surface-variant'"
                   >
+                    <STag
+                      v-if="downloadStore.isDownloaded(item)"
+                      type="primary"
+                      variant="soft"
+                      size="tiny"
+                      circle
+                      class="shrink-0"
+                    >
+                      <IconLucideCheck class="size-3" aria-hidden="true" />
+                    </STag>
                     <span
                       v-if="localMatchOf(item)"
                       class="inline-flex h-[18px] shrink-0 items-center rounded px-1 text-[10px] font-bold leading-none text-sky-500 ring-1 ring-inset ring-sky-500/35 dark:text-sky-300 dark:ring-sky-300/40"

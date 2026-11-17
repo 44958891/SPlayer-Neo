@@ -54,6 +54,8 @@ const invalidateHealthCache = (): void => {
 
 /** 解析选项 */
 export interface ResolveTrackSourceOptions {
+  /** 已下载文件加载失败时跳过，继续解析缓存或在线音源 */
+  skipDownloaded?: boolean;
   /** 将解析失败原因交给播放流程，供提示和跳曲决策使用 */
   onError?: (error: string) => void;
   /** 要跳过的插件 ID 列表 */
@@ -562,7 +564,7 @@ const resolveOnlineUrl = async (
 export interface ResolvedTrackSource {
   source: string;
   fromCache: boolean;
-  provider: "local" | "cache" | "streaming" | "official" | "plugin" | "trial";
+  provider: "local" | "download" | "cache" | "streaming" | "official" | "plugin" | "trial";
   pluginId?: string;
   /** 解析确认的实际音质档位；本地 / 缓存命中等未知场景缺省 */
   level?: QualityLevel;
@@ -603,6 +605,20 @@ export const resolveTrackSource = async (
   }
   const settings = useSettingsStore();
   const songLevel = settings.player.songLevel;
+  if (!options.skipDownloaded) {
+    try {
+      const downloaded = await window.api.download.lookup({
+        source: track.source,
+        id: track.id,
+        ...(track.source === "streaming"
+          ? { serverId: track.serverId, originalId: track.originalId }
+          : {}),
+      });
+      if (downloaded) return { source: downloaded, fromCache: false, provider: "download" };
+    } catch (err) {
+      console.warn("[audio-source] download lookup failed:", err);
+    }
+  }
   const cacheKey = cacheKeyForTrack(track, songLevel);
   const cacheEnabled = settings.system.cache?.songCache?.enabled === true && cacheKey !== null;
   if (cacheEnabled) {

@@ -112,6 +112,9 @@ export interface EnqueueResult {
   reason?: "queued" | "downloaded" | "existsLocal";
 }
 
+/** 下载记录中的歌曲身份；流媒体额外区分服务器 */
+export type DownloadTrackIdentity = Pick<Track, "source" | "id" | "serverId" | "originalId">;
+
 /** 渲染端下载 IPC 入口 */
 export interface DownloadApi {
   start: (req: DownloadRequest) => Promise<EnqueueResult>;
@@ -121,6 +124,7 @@ export interface DownloadApi {
   remove: (taskId: string) => Promise<void>;
   clearFinished: () => Promise<void>;
   list: () => Promise<DownloadTask[]>;
+  lookup: (track: DownloadTrackIdentity) => Promise<string | null>;
   pickDir: () => Promise<{ ok: boolean; dir: string; reason?: "canceled" }>;
   getDir: () => Promise<string>;
   resetDir: () => Promise<string>;
