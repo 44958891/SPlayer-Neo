@@ -1708,6 +1708,12 @@
       "sidebarFull": "Immersive Sidebar",
       "floating": "Dynamic Floating"
     },
+    "songListStyle": {
+      "label": "Song List Style",
+      "description": "Display density of song lists",
+      "comfortable": "Comfortable",
+      "compact": "Compact"
+    },
     "routeTransition": {
       "label": "Page Transition",
       "description": "Animation effect when switching pages",

@@ -1708,6 +1708,12 @@
       "sidebarFull": "沉浸侧栏",
       "floating": "灵动悬浮"
     },
+    "songListStyle": {
+      "label": "歌曲列表样式",
+      "description": "配置歌曲列表的展示密度",
+      "comfortable": "舒适",
+      "compact": "紧凑"
+    },
     "routeTransition": {
       "label": "页面切换动效",
       "description": "切换页面时的过渡动画效果",
