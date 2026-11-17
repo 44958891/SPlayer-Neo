@@ -5,9 +5,52 @@
 - 仓库：https://github.com/44958891/SPlayer-Neo
 - 安装包目录：`D:\Download\SPlayer-Next-Mod\`
 - 源码工作区：`D:\BaiduNetdiskDownload\zcode\SPlayer-Next`
-- 当前最新：**1.1.0**（2026-11-17）
+- 当前最新：**1.2.0-beta.1**（2026-11-17）
 
 > 说明：每个版本的"新增/修复"条目均按当期 asar 产物内的特征标记核验过（见文末核验方法），不是仅凭记录推断。
+
+---
+
+## 1.2.0-beta.1（2026-11-17）— 同步上游 v1.2.0 八项特性
+
+从上游 [SPlayer-Next v1.2.0](https://github.com/SPlayer-Dev/SPlayer-Next/releases/tag/v1.2.0)（82 个提交）中挑选以下特性接入（cherry-pick + 本地化冲突解决）：
+
+**已下载歌曲优先播放**（上游 `4e4a7118`）
+
+- 播放前先查下载库：同一首歌已有完成的本地文件就直接播文件，不再走网络解析
+- 歌曲列表给已下载歌曲加 ✓ 徽标（与本地库匹配徽标并存）
+- 曲目菜单新增「复制文件」：已下载歌曲复制其文件，本地歌曲复制源文件（Windows FileNameW / macOS file-url）
+- 换源链路：download 来源失败（文件被移动/删除）时无条件重新解析一次在线地址
+
+**流媒体同步重构**（上游 `aa2649df`）
+
+- Jellyfin / Subsonic 适配器重写，新增 playback / playbackSession / snapshot / pagination / mediaSource / errors 等模块
+- 流媒体曲目改用 `streaming://server/id` 身份占位符，凭据与播放会话统一由主进程解析
+- 流媒体下载改为经主进程 `resolveStreamingMediaSource` 取流地址
+- 新增约 900 行流媒体单测
+
+**插件独立音源**（上游 `899e1dac`）
+
+- 插件可声明独立音源（不依附五大平台），搜索页出现插件来源时切换为下拉选择
+- 新增 `electron/main/plugins/search.ts`（独立来源搜索 → 可持久化 Track），Host API 级别 3 → 5
+- `plugin:list` 支持等待指定插件就绪（恢复独立来源曲目时只等待所属插件）
+
+**其他上游改进**
+
+- 音量曲线统一：滚轮与快捷键步进一致（`e7d30c25`，新增 `src/utils/volume.ts`）
+- 播放页展开与歌词初始化时序优化（`d30a5f12`）
+- 窄窗口布局：侧栏自动折叠、顶栏/播放栏窄窗口精简（`833e83b6`，新增 `useResponsiveLayout`）
+- 歌曲列表紧凑样式：外观设置新增「列表密度」舒适/紧凑切换（`084b54a7`）
+- 快捷键录入完善：支持小键盘与 Windows 键、长按去重（`9d3ca78f`）
+
+**本地化适配**
+
+- 已下载优先播放的换源语义与 Neo 的网络错误换源修复合并：download 来源必重试一次，网络类错误仍按「还有未试来源」判定
+- 上游测试对齐本地 schema（download_tasks 含 `probed` 列）、settings mock 改回动态 songLevel
+
+**不接入**：播放页屏幕常亮、随机播放首曲固定修复（用户指定）；WASAPI 独占/交叉过渡等已有；Electron 44/Vite 8 工具链升级（另行评估）
+
+**验证**：typecheck 0 错、vitest 447 全过、node 测试 50 全过
 
 ---
 
