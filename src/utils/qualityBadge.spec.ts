@@ -86,14 +86,18 @@ describe("resolveQualityBadgeView 徽标判定", () => {
     expect(view.mismatch).toBe(false);
   });
 
-  it("QQ 4.0 精确回执和通用母带家族使用不同文案", () => {
+  it("QQ 4.0 历史精确回执统一归一母带文案，原始版本仅留档位原文", () => {
     const view = resolveQualityBadgeView(
       flac(192000, 24),
       provenance({ platform: "qqmusic", nativeTier: "qq-master-4.0" }),
     );
-    expect(qualityBadgeText(view).label).toBe("臻品母带 4.0");
+    expect(view.tier).toBe("qq-master");
+    expect(view.nativeTier).toBe("qq-master-4.0");
+    expect(qualityBadgeText(view).label).toBe("臻品母带");
+    expect(qualityBadgeText(view).tooltip).toContain("来源档位：qq-master-4.0");
     i18n.global.locale.value = "en-US";
-    expect(qualityBadgeText(view).label).toBe("Premium Master 4.0");
+    expect(qualityBadgeText(view).label).toBe("Premium Master");
+    i18n.global.locale.value = "zh-CN";
   });
 
   it("QQ 全景声 2.0 与普通全景声文案分别来自实际档位", () => {
@@ -376,6 +380,46 @@ describe("档位标签覆盖完整", () => {
       expect(qualityLevelLabel(level)).not.toContain("quality.level");
       i18n.global.locale.value = "en-US";
       expect(qualityLevelLabel(level)).not.toContain("quality.level");
+      i18n.global.locale.value = "zh-CN";
+    }
+  });
+});
+
+describe("酷我母带菜单与实际回执文案一致", () => {
+  const MENU_ID = "kuwo:kuwo-master";
+
+  /**
+   * 构造酷我母带回执的徽标视图
+   * @param nativeTier - 音源回传的原生档位（master / kuwo-master 两种实测别名）
+   * @returns 已解析的徽标视图
+   */
+  const kuwoMasterView = (nativeTier: string) =>
+    resolveQualityBadgeView(flac(192000, 24), provenance({ platform: "kuwo", nativeTier }));
+
+  it("菜单选择与 master / kuwo-master 两种回执在两种语言下显示同名", () => {
+    const views = [kuwoMasterView("master"), kuwoMasterView("kuwo-master")];
+    expect(views.map((view) => view.tier)).toEqual(["kuwo-master-quality", "kuwo-master"]);
+    expect(qualitySelectionLabel(MENU_ID, "kuwo")).toBe("至臻母带");
+    for (const view of views) {
+      expect(qualityBadgeText(view).label).toBe(qualitySelectionLabel(MENU_ID, "kuwo"));
+    }
+    i18n.global.locale.value = "en-US";
+    expect(qualitySelectionLabel(MENU_ID, "kuwo")).toBe("Kuwo Master");
+    for (const view of views) {
+      expect(qualityBadgeText(view).label).toBe(qualitySelectionLabel(MENU_ID, "kuwo"));
+    }
+    i18n.global.locale.value = "zh-CN";
+  });
+
+  it("两种回执的悬浮提示在中英文下均保留原生档位原文", () => {
+    for (const nativeTier of ["master", "kuwo-master"]) {
+      expect(qualityBadgeText(kuwoMasterView(nativeTier)).tooltip).toContain(
+        i18n.global.t("quality.tooltip.nativeTier", { tier: nativeTier }),
+      );
+      i18n.global.locale.value = "en-US";
+      expect(qualityBadgeText(kuwoMasterView(nativeTier)).tooltip).toContain(
+        i18n.global.t("quality.tooltip.nativeTier", { tier: nativeTier }),
+      );
       i18n.global.locale.value = "zh-CN";
     }
   });

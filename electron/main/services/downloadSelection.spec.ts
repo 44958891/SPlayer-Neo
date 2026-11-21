@@ -49,7 +49,8 @@ vi.mock("@main/services/streaming/mediaSource", () => ({
   resolveStreamingMediaSource: vi.fn(),
 }));
 import * as db from "@main/database/downloads";
-import { cancel, enqueue } from "./downloadManager";
+import { broadcast } from "@main/utils/broadcast";
+import { cancel, enqueue, failResolution } from "./downloadManager";
 
 const NONE_TAGS = {
   embedCover: false,
@@ -115,7 +116,7 @@ describe("下载平台选择档位校验", () => {
     state.db.exec(`
       CREATE TABLE download_tasks (
         task_id TEXT PRIMARY KEY, track_json TEXT NOT NULL, quality_level TEXT NOT NULL,
-        quality_selection TEXT, status TEXT NOT NULL, received INTEGER NOT NULL DEFAULT 0,
+        quality_selection TEXT, target_dir TEXT, replace_source_path TEXT, min_level TEXT, status TEXT NOT NULL, received INTEGER NOT NULL DEFAULT 0,
         total INTEGER NOT NULL DEFAULT 0, file_path TEXT, error_code TEXT,
         tag_warning INTEGER NOT NULL DEFAULT 0, probed INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL, finished_at INTEGER
@@ -217,51 +218,72 @@ describe("下载平台选择档位校验", () => {
     },
   );
 
-  it("臻品母带4.0：精确 4 回执 + 母带规格 → 落盘成功且选择持久化", async () => {
+  it("QQ 母带统一目标：规范 master 选择 + master 回执 → 落盘成功且选择持久化", async () => {
     mockProbe(null, { codec: "flac", sampleRate: 176400, bitsPerSample: 24 });
     await enqueue(
-      buildRequest("sel-master4", {
+      buildRequest("sel-master", {
         track: { source: "qqmusic", id: "9" },
         qualityLevel: "jymaster",
-        qualitySelection: "qqmusic:qq-master-4.0",
+        qualitySelection: "qqmusic:master",
         qualityProvenance: brand({
           platform: "qqmusic",
           sourceKey: "tx",
-          nativeTier: "qq-master-4.0",
+          nativeTier: "master",
         }),
       }),
     );
-    const task = await waitForFinish("sel-master4");
+    const task = await waitForFinish("sel-master");
     expect(task.status).toBe("done");
-    expect(task.qualitySelection).toBe("qqmusic:qq-master-4.0");
-    expect(db.findById("sel-master4")?.qualitySelection).toBe("qqmusic:qq-master-4.0");
+    expect(task.qualitySelection).toBe("qqmusic:master");
+    expect(db.findById("sel-master")?.qualitySelection).toBe("qqmusic:master");
   });
 
-  it.each(["qqmusic:qq-premium-2.0", "qqmusic:qq-master-2.0"])(
-    "已下线/历史 QQ 选择 %s 按 4.0 品牌门槛校验",
-    async (qualitySelection) => {
-      // 旧臻品已下线 → 校验直接拒绝；历史母带 2.0 归一到 4.0，但 generic 回执不算 4.0 → 拒绝
+  it.each([
+    { selection: "qqmusic:qq-master-4.0", nativeTier: "qq-master-4.0" },
+    { selection: "qqmusic:qq-master-2.0", nativeTier: "qq-master-2.0" },
+  ])(
+    "历史母带 $selection 统一到母带门槛：合法母带文件落盘成功并原样持久化",
+    async ({ selection, nativeTier }) => {
+      // 旧 4.0/2.0 选择都归一到统一母带目标，历史版本回执同样命中母带门槛
       mockProbe(null, { codec: "flac", sampleRate: 176400, bitsPerSample: 24 });
       await enqueue(
-        buildRequest(`sel-retired-${qualitySelection.split(":")[1]}`, {
+        buildRequest(`sel-legacy-${selection.split(":")[1]}`, {
           track: { source: "qqmusic", id: "9" },
           qualityLevel: "jymaster",
-          qualitySelection,
+          qualitySelection: selection,
           qualityProvenance: brand({
             platform: "qqmusic",
             sourceKey: "tx",
-            nativeTier: qualitySelection.endsWith("premium-2.0")
-              ? "qq-premium-2.0"
-              : "qq-master-2.0",
+            nativeTier,
           }),
         }),
       );
-      const id = `sel-retired-${qualitySelection.split(":")[1]}`;
+      const id = `sel-legacy-${selection.split(":")[1]}`;
       const task = await waitForFinish(id);
-      expect(task.status).toBe("failed");
-      expect(task.errorCode).toBe(ErrorCode.DOWNLOAD_QUALITY_NOT_MET);
+      expect(task.status).toBe("done");
+      expect(task.qualitySelection).toBe(selection);
+      expect(db.findById(id)?.qualitySelection).toBe(selection);
     },
   );
+
+  it("已下线臻品选择 qqmusic:qq-premium-2.0 仍校验拒绝，不静默换档", async () => {
+    mockProbe(null, { codec: "flac", sampleRate: 176400, bitsPerSample: 24 });
+    await enqueue(
+      buildRequest("sel-retired-premium", {
+        track: { source: "qqmusic", id: "9" },
+        qualityLevel: "jymaster",
+        qualitySelection: "qqmusic:qq-premium-2.0",
+        qualityProvenance: brand({
+          platform: "qqmusic",
+          sourceKey: "tx",
+          nativeTier: "qq-premium-2.0",
+        }),
+      }),
+    );
+    const task = await waitForFinish("sel-retired-premium");
+    expect(task.status).toBe("failed");
+    expect(task.errorCode).toBe(ErrorCode.DOWNLOAD_QUALITY_NOT_MET);
+  });
 
   it.each(["kuwo:kuwo-premium-2.0", "kuwo:kuwo-spatial", "kuwo:hires"])(
     "酷我已移除档位选择 %s 显式拒绝，不静默变低档",
@@ -380,5 +402,182 @@ describe("下载平台选择档位校验", () => {
     );
     expect(other).toEqual({ ok: true });
     cancel("sel-dedupe-plus");
+  });
+
+  it("酷狗母带升级：24/96 文件符合平台母带保证规格（Hi-Res）→ 升级成功且原文件删除", async () => {
+    const original = path.join(state.downloadDir, "orig-kg-master.flac");
+    await fsp.writeFile(original, Buffer.alloc(16, 1));
+    mockProbe(
+      { codec: "flac", sampleRate: 44100, bitsPerSample: 16 },
+      { codec: "flac", sampleRate: 96000, bitsPerSample: 24 },
+    );
+    await enqueue(
+      buildRequest("sel-upgrade-kg-master", {
+        track: { source: "kugou", id: "7" },
+        qualityLevel: "jymaster",
+        qualitySelection: "kugou:kugou-master",
+        qualityProvenance: brand({
+          platform: "kugou",
+          sourceKey: "kg",
+          nativeTier: "kugou-master",
+        }),
+        targetDir: state.downloadDir,
+        replaceSourcePath: original,
+        minLevel: "hi-res",
+      }),
+    );
+    const task = await waitForFinish("sel-upgrade-kg-master");
+    expect(task.status).toBe("done");
+    expect(fs.existsSync(original)).toBe(false);
+    expect(fs.existsSync(task.filePath!)).toBe(true);
+    expect(task.track.quality?.sampleRate).toBe(96000);
+    expect(task.track.qualityProvenance?.nativeTier).toBe("kugou-master");
+  });
+
+  it("酷狗母带升级：新文件低于原文件实测档位 → 拒绝替换并保留原文件", async () => {
+    const original = path.join(state.downloadDir, "orig-kg-down.flac");
+    await fsp.writeFile(original, Buffer.alloc(16, 1));
+    mockProbe(
+      { codec: "flac", sampleRate: 96000, bitsPerSample: 24 },
+      { codec: "flac", sampleRate: 44100, bitsPerSample: 16 },
+    );
+    await enqueue(
+      buildRequest("sel-upgrade-kg-down", {
+        track: { source: "kugou", id: "8" },
+        qualityLevel: "jymaster",
+        qualitySelection: "kugou:kugou-master",
+        qualityProvenance: brand({
+          platform: "kugou",
+          sourceKey: "kg",
+          nativeTier: "kugou-master",
+        }),
+        targetDir: state.downloadDir,
+        replaceSourcePath: original,
+        minLevel: "hi-res",
+      }),
+    );
+    const task = await waitForFinish("sel-upgrade-kg-down");
+    expect(task.status).toBe("failed");
+    expect(task.errorCode).toBe(ErrorCode.DOWNLOAD_QUALITY_NOT_MET);
+    expect(fs.existsSync(original)).toBe(true);
+    // 失败行持久化升级参数：重启后重试仍可继续原位升级
+    const persisted = db.findById("sel-upgrade-kg-down");
+    expect(persisted?.targetDir).toBe(state.downloadDir);
+    expect(persisted?.replaceSourcePath).toBe(original);
+    expect(persisted?.minLevel).toBe("hi-res");
+  });
+
+  it("酷狗母带升级：原文件已是更高规格（24/192）时不得降级替换", async () => {
+    const original = path.join(state.downloadDir, "orig-kg-nodown.flac");
+    await fsp.writeFile(original, Buffer.alloc(16, 1));
+    mockProbe(
+      { codec: "flac", sampleRate: 192000, bitsPerSample: 24 },
+      { codec: "flac", sampleRate: 96000, bitsPerSample: 24 },
+    );
+    await enqueue(
+      buildRequest("sel-upgrade-kg-nodown", {
+        track: { source: "kugou", id: "10" },
+        qualityLevel: "jymaster",
+        qualitySelection: "kugou:kugou-master",
+        qualityProvenance: brand({
+          platform: "kugou",
+          sourceKey: "kg",
+          nativeTier: "kugou-master",
+        }),
+        targetDir: state.downloadDir,
+        replaceSourcePath: original,
+        minLevel: "hi-res",
+      }),
+    );
+    const task = await waitForFinish("sel-upgrade-kg-nodown");
+    expect(task.status).toBe("failed");
+    expect(task.errorCode).toBe(ErrorCode.DOWNLOAD_QUALITY_NOT_MET);
+    expect(fs.existsSync(original)).toBe(true);
+  });
+
+  it("酷狗母带升级：调用方显式要求更高物理下限时仍拒绝低规格文件", async () => {
+    const original = path.join(state.downloadDir, "orig-kg-explicit.flac");
+    await fsp.writeFile(original, Buffer.alloc(16, 1));
+    mockProbe(
+      { codec: "flac", sampleRate: 44100, bitsPerSample: 16 },
+      { codec: "flac", sampleRate: 96000, bitsPerSample: 24 },
+    );
+    await enqueue(
+      buildRequest("sel-upgrade-kg-explicit", {
+        track: { source: "kugou", id: "12" },
+        qualityLevel: "jymaster",
+        qualitySelection: "kugou:kugou-master",
+        qualityProvenance: brand({
+          platform: "kugou",
+          sourceKey: "kg",
+          nativeTier: "kugou-master",
+        }),
+        targetDir: state.downloadDir,
+        replaceSourcePath: original,
+        minLevel: "jymaster",
+      }),
+    );
+    const task = await waitForFinish("sel-upgrade-kg-explicit");
+    expect(task.status).toBe("failed");
+    expect(task.errorCode).toBe(ErrorCode.DOWNLOAD_QUALITY_NOT_MET);
+    expect(fs.existsSync(original)).toBe(true);
+  });
+
+  it("酷狗母带升级：无品牌声明回执（请求回显）→ 拒绝并保留原文件", async () => {
+    const original = path.join(state.downloadDir, "orig-kg-nodecl.flac");
+    await fsp.writeFile(original, Buffer.alloc(16, 1));
+    mockProbe(
+      { codec: "flac", sampleRate: 44100, bitsPerSample: 16 },
+      { codec: "flac", sampleRate: 96000, bitsPerSample: 24 },
+    );
+    await enqueue(
+      buildRequest("sel-upgrade-kg-nodecl", {
+        track: { source: "kugou", id: "11" },
+        qualityLevel: "jymaster",
+        qualitySelection: "kugou:kugou-master",
+        qualityProvenance: brand({ platform: "kugou", sourceKey: "kg", evidence: "request" }),
+        targetDir: state.downloadDir,
+        replaceSourcePath: original,
+        minLevel: "hi-res",
+      }),
+    );
+    const task = await waitForFinish("sel-upgrade-kg-nodecl");
+    expect(task.status).toBe("failed");
+    expect(task.errorCode).toBe(ErrorCode.DOWNLOAD_QUALITY_NOT_MET);
+    expect(fs.existsSync(original)).toBe(true);
+  });
+
+  it.each([
+    { id: "res-fail-plain", label: "未带原因码", code: undefined },
+    { id: "res-fail-badcode", label: "白名单外非法码", code: "NOT_A_REAL_CODE" },
+  ])("解析失败兜底：$label → 任务持久化 UNKNOWN", async ({ id, code }) => {
+    await enqueue(buildRequest(id, { url: undefined }));
+    // 轮到任务且缺 URL 时主进程广播解析请求，门注册完成后再回传失败
+    await vi.waitFor(() => {
+      expect(broadcast).toHaveBeenCalledWith(
+        "download:resolve",
+        expect.objectContaining({ taskId: id }),
+      );
+    });
+    failResolution(id, code);
+    const task = await waitForFinish(id);
+    expect(task.status).toBe("failed");
+    expect(task.errorCode).toBe(ErrorCode.UNKNOWN);
+    expect(db.findById(id)?.errorCode).toBe(ErrorCode.UNKNOWN);
+  });
+
+  it("解析失败带合法原因码 → 任务持久化该码而非 UNKNOWN", async () => {
+    await enqueue(buildRequest("res-fail-quality", { url: undefined }));
+    await vi.waitFor(() => {
+      expect(broadcast).toHaveBeenCalledWith(
+        "download:resolve",
+        expect.objectContaining({ taskId: "res-fail-quality" }),
+      );
+    });
+    failResolution("res-fail-quality", ErrorCode.DOWNLOAD_QUALITY_NOT_MET);
+    const task = await waitForFinish("res-fail-quality");
+    expect(task.status).toBe("failed");
+    expect(task.errorCode).toBe(ErrorCode.DOWNLOAD_QUALITY_NOT_MET);
+    expect(db.findById("res-fail-quality")?.errorCode).toBe(ErrorCode.DOWNLOAD_QUALITY_NOT_MET);
   });
 });

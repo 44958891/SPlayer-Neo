@@ -451,17 +451,22 @@ const toggleAll = (): void => {
   for (const item of matchedItems.value) item.checked = next;
 };
 
-/** 构建"落地原目录 + 成功后删原文件"的下载请求 */
+/**
+ * 构建按平台物理下限升级、验证成功后替换原文件的请求
+ * @param item - 已匹配在线来源的本地曲目
+ * @returns 保留来源目标与文件下限的下载请求
+ */
 const buildRequest = (item: UpgradeItem): DownloadRequest => {
   const download = useSettingsStore().system.download;
   const online = item.matched!;
   const source = online.source as Platform;
+  const selection = upgradePlatformQuality(source, target.value);
   return {
     taskId: crypto.randomUUID(),
     track: online,
     qualityLevel: target.value,
     // 平台具体目标（如 netease:hires），主进程按它做严格档位校验；全局下载默认设置不适用于升级
-    qualitySelection: upgradePlatformQuality(source, target.value)?.id,
+    qualitySelection: selection?.id,
     coverUrl: online.coverOriginal ?? online.cover,
     tagOptions: {
       embedCover: download.embedCover,
@@ -473,8 +478,8 @@ const buildRequest = (item: UpgradeItem): DownloadRequest => {
     lyricFileFormat: download.lyricFileFormat,
     targetDir: pathDirName(item.local.path!),
     replaceSourcePath: item.local.path!,
-    // 替换下限显式取目标档位：原文件探测不到档位（已损坏）时也强制要求目标规格
-    minLevel: target.value,
+    // 品牌目标使用平台保证规格，避免把酷狗母带误当作通用 Master 文件门槛
+    minLevel: selection?.minimumLevel ?? target.value,
   };
 };
 

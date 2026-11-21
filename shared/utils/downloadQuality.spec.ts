@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { AudioQuality } from "../types/player";
 import type { QualityProvenance } from "../types/quality";
-import { downloadQualityMeets } from "./downloadQuality";
+import { downloadQualityMeets, qualityDeclarationMeets } from "./downloadQuality";
+import { findPlatformQuality } from "./platformQuality";
 
 /** 探测得到的音频参数 */
 const audio = (over: Partial<AudioQuality>): AudioQuality => ({
@@ -20,6 +21,52 @@ const provenance = (over: Partial<QualityProvenance>): QualityProvenance => ({
   platform: "netease",
   evidence: "plugin",
   ...over,
+});
+
+/** QQ 母带全别名回执，统一归一 canonical qq-master */
+const masterReceipts = [
+  "master",
+  "qq-master",
+  "jymaster",
+  "臻品母带",
+  "qq-master-4.0",
+  "臻品母带4.0",
+  "qq-master-2.0",
+  "臻品母带2.0",
+];
+
+describe("qualityDeclarationMeets", () => {
+  it("只有声明回执匹配才确认母带，选择证据不能代替文件校验", () => {
+    const option = findPlatformQuality("qqmusic:master")!;
+    const confirmed = provenance({ platform: "qqmusic", nativeTier: "master" });
+    expect(qualityDeclarationMeets(option, confirmed)).toBe(true);
+    expect(qualityDeclarationMeets(option, { ...confirmed, evidence: "request" })).toBe(false);
+    expect(qualityDeclarationMeets(option, { ...confirmed, platform: "kugou" })).toBe(false);
+    expect(qualityDeclarationMeets(option, { ...confirmed, nativeTier: "hires" })).toBe(false);
+    expect(qualityDeclarationMeets(option, undefined)).toBe(false);
+    expect(
+      downloadQualityMeets({
+        selection: option.id,
+        source: "qqmusic",
+        qualityLevel: "jymaster",
+        provenance: confirmed,
+        quality: audio({}),
+      }),
+    ).toBe(false);
+  });
+
+  it("全景声与全景声升级版回执仍不可互换", () => {
+    const option = findPlatformQuality("qqmusic:qq-spatial-2.0")!;
+    expect(
+      qualityDeclarationMeets(
+        option,
+        provenance({ platform: "qqmusic", nativeTier: "atmos_plus" }),
+      ),
+    ).toBe(true);
+    expect(
+      qualityDeclarationMeets(option, provenance({ platform: "qqmusic", nativeTier: "atmos" })),
+    ).toBe(false);
+  });
 });
 
 describe("downloadQualityMeets", () => {
@@ -182,43 +229,58 @@ describe("downloadQualityMeets", () => {
     },
   );
 
-  it("臻品母带4.0：精确 4 回执 + 母带规格文件 → 通过", () => {
-    expect(
-      downloadQualityMeets({
-        selection: "qqmusic:qq-master-4.0",
-        qualityLevel: "jymaster",
-        source: "qqmusic",
-        provenance: provenance({ platform: "qqmusic", nativeTier: "qq-master-4.0" }),
-        quality: audio({ sampleRate: 176400, bitsPerSample: 24 }),
-      }),
-    ).toBe(true);
-  });
-
-  it.each(["master", "qq-master-2.0", "臻品母带2.0"])(
-    "臻品母带4.0：generic/历史2.0 回执 %s 只归一母带品牌，不算 4.0 → 拒绝",
+  it.each(masterReceipts)(
+    "臻品母带：回执 %s + 24bit/192kHz 文件按同一 canonical 品牌达标",
     (nativeTier) => {
       expect(
         downloadQualityMeets({
-          selection: "qqmusic:qq-master-4.0",
+          selection: "qqmusic:master",
           qualityLevel: "jymaster",
           source: "qqmusic",
           provenance: provenance({ platform: "qqmusic", nativeTier }),
-          quality: audio({ sampleRate: 176400, bitsPerSample: 24 }),
+          quality: audio({ sampleRate: 192000, bitsPerSample: 24 }),
+        }),
+      ).toBe(true);
+    },
+  );
+
+  it.each(masterReceipts)(
+    "臻品母带：回执 %s + 16bit/44.1kHz 文件低于母带物理下限 → 拒绝",
+    (nativeTier) => {
+      expect(
+        downloadQualityMeets({
+          selection: "qqmusic:master",
+          qualityLevel: "jymaster",
+          source: "qqmusic",
+          provenance: provenance({ platform: "qqmusic", nativeTier }),
+          quality: audio({}),
         }),
       ).toBe(false);
     },
   );
 
-  it("臻品母带4.0：CD 规格文件低于最低母带规格 → 拒绝", () => {
+  it("臻品母带：request 回显不构成档位证据 → 拒绝", () => {
+    expect(
+      downloadQualityMeets({
+        selection: "qqmusic:master",
+        qualityLevel: "jymaster",
+        source: "qqmusic",
+        provenance: provenance({ platform: "qqmusic", nativeTier: "master", evidence: "request" }),
+        quality: audio({ sampleRate: 192000, bitsPerSample: 24 }),
+      }),
+    ).toBe(false);
+  });
+
+  it("臻品母带：旧 4.0 选择与 canonical master 接受同一别名回执", () => {
     expect(
       downloadQualityMeets({
         selection: "qqmusic:qq-master-4.0",
         qualityLevel: "jymaster",
         source: "qqmusic",
-        provenance: provenance({ platform: "qqmusic", nativeTier: "qq-master-4.0" }),
-        quality: audio({}),
+        provenance: provenance({ platform: "qqmusic", nativeTier: "臻品母带4.0" }),
+        quality: audio({ sampleRate: 192000, bitsPerSample: 24 }),
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it.each(["qqmusic:qq-premium-2.0", "kuwo:kuwo-premium-2.0", "kuwo:kuwo-spatial", "kuwo:hires"])(

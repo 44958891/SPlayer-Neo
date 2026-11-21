@@ -4,8 +4,9 @@ import type { QualityProvenance } from "@shared/types/quality";
 import { isPlatform } from "@shared/types/platform";
 import { streamingSourceForTrack } from "@shared/utils/streamingSource";
 import { validateQualityProvenance } from "@shared/utils/qualityProvenance";
+import { qualityDeclarationMeets } from "@shared/utils/downloadQuality";
 import { findPlatformQuality, resolvePlatformQuality } from "@/utils/platformQuality";
-import { resolveByPluginBest, type OnlineResolveResult } from "@/services/audioSource";
+import { resolveByPluginBest } from "@/services/audioSource";
 import { ErrorCode } from "@shared/types/errors";
 
 /** 下载源解析成功 */
@@ -78,14 +79,15 @@ export const resolveDownloadSource = async (
   const res = await resolveByPluginBest(track, target.level, [], true, target.id);
   if (!res.ok) return { ok: false, errorCode: res.errorCode };
   if (res.isTrial) return { ok: false, errorCode: ErrorCode.NETEASE_TRIAL_DISABLED };
+  const provenance = validateQualityProvenance(res.qualityProvenance);
+  if (!qualityDeclarationMeets(target, provenance))
+    return { ok: false, errorCode: ErrorCode.DOWNLOAD_QUALITY_NOT_MET };
   return {
     ok: true,
     url: res.url,
     // 探针实测体积回传主进程：下载进度在 Content-Length 缺失时用它兜底
     ...(res.sizeBytes && res.sizeBytes > 0 ? { size: res.sizeBytes } : {}),
     // 解析器回传的音质依据经校验后透传，非法数据按未知来源处理
-    qualityProvenance: validateQualityProvenance(
-      (res as OnlineResolveResult & { qualityProvenance?: unknown }).qualityProvenance,
-    ),
+    qualityProvenance: provenance,
   };
 };

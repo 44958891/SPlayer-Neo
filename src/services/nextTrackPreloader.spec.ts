@@ -480,7 +480,7 @@ describe("下一曲真实预载", () => {
   });
 
   it("预载请求携带保存的具体音质选择", async () => {
-    mocks.settings.player.songQualitySelection = "qqmusic:qq-master-4.0";
+    mocks.settings.player.songQualitySelection = "qqmusic:master";
     mocks.candidate.track = { id: "next", source: "qqmusic" };
     mocks.resolve.mockResolvedValue({
       source: "C:/cache/next.bin",
@@ -492,7 +492,7 @@ describe("下一曲真实预载", () => {
     await flushPromises();
     expect(mocks.resolve.mock.calls[0]?.[1]).toMatchObject({
       silent: true,
-      qualitySelection: "qqmusic:qq-master-4.0",
+      qualitySelection: "qqmusic:master",
     });
     expect(preloader.consumePreloadedTrack(mocks.candidate.track as Track)).not.toBeNull();
   });

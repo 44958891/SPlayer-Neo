@@ -73,15 +73,22 @@ export const PLATFORM_QUALITY_OPTIONS: Readonly<
       false,
       true,
     ),
-    // 母带版本只认实际回执，不按文件名前缀推定 4.0
+    // QQ 母带统一目标，优先使用插件原生 master；历史版本名仅作兼容别名
     option(
       "qqmusic",
-      "qq-master-4.0",
+      "master",
       "jymaster",
       "master",
-      // 候选仅含精确 4.0 与通用母带；不含旧 2.0/generic "qq-master" 回执串，
-      // 避免历史回执被当成 4.0 声明点亮数字图形
-      ["qq-master-4.0", "master", "jymaster", "臻品母带4.0"],
+      [
+        "master",
+        "jymaster",
+        "qq-master",
+        "臻品母带",
+        "qq-master-4.0",
+        "臻品母带4.0",
+        "qq-master-2.0",
+        "臻品母带2.0",
+      ],
       false,
       true,
       "jymaster",
@@ -139,13 +146,18 @@ export const PLATFORM_QUALITY_OPTIONS: Readonly<
   ],
 };
 
-/** 当前 QQ 母带 4.0 选择标识 */
-const QQ_MASTER_4_ID = "qqmusic:qq-master-4.0";
+/** QQ 母带统一选择标识 */
+const QQ_MASTER_ID = "qqmusic:master";
 
-/** 旧选择到现有菜单对象的兼容映射：QQ 母带 2.0→4.0、咪咕至臻→hires。
- * 仅作 find/normalize 入口，请求候选仍为规范档，不携带旧串 */
+/** 历史母带选择统一到 master，其他平台别名仍限制在原平台 */
 const LEGACY_SELECTION_MAP: Readonly<Record<string, string>> = {
-  "qqmusic:qq-master-2.0": QQ_MASTER_4_ID,
+  "qqmusic:qq-master-4.0": QQ_MASTER_ID,
+  "qqmusic:qq-master-2.0": QQ_MASTER_ID,
+  "qqmusic:qq-master": QQ_MASTER_ID,
+  "qqmusic:jymaster": QQ_MASTER_ID,
+  "qqmusic:臻品母带": QQ_MASTER_ID,
+  "qqmusic:臻品母带4.0": QQ_MASTER_ID,
+  "qqmusic:臻品母带2.0": QQ_MASTER_ID,
   "migu:migu-premium": "migu:hires",
 };
 

@@ -1,5 +1,6 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { DownloadRequest } from "@shared/types/download";
 import type { Track } from "@shared/types/player";
 import i18n from "@/i18n";
 import QualityUpgradeDialog from "./QualityUpgradeDialog.vue";
@@ -87,6 +88,44 @@ describe("音质升级平台缺档", () => {
     expect(localStorage.getItem("upgrade.target")).toBe(target);
     await targetSelect.setValue("lossless");
     expect(scan.attributes("disabled")).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it("酷狗母带升级入队按平台 Hi-Res 规格传下限，仍保留母带目标", async () => {
+    localStorage.setItem("upgrade.platform", "kugou");
+    localStorage.setItem("upgrade.target", "jymaster");
+    mocks.searchSongs.mockResolvedValue({
+      items: [{ ...mocks.tracks[0], id: "kg-online", source: "kugou", path: undefined }],
+      total: 1,
+      hasMore: false,
+    });
+    const startMany = vi.fn(async (_requests: DownloadRequest[]) => [{ ok: true }]);
+    Object.defineProperty(window, "api", {
+      configurable: true,
+      value: { download: { startMany } },
+    });
+    const wrapper = mountDialog();
+    const scan = wrapper.findAll("button").find((button) => button.text() === "开始检测")!;
+    await scan.trigger("click");
+    await flushPromises();
+    await vi.waitFor(() => expect(wrapper.text()).toContain("酷狗 · 蝰蛇超清"));
+    const upgrade = wrapper
+      .findAll("button")
+      .find(
+        (button) => button.text() === i18n.global.t("library.upgrade.upgradeBtn", { count: 1 }),
+      )!;
+    await upgrade.trigger("click");
+    await flushPromises();
+    expect(startMany).toHaveBeenCalledOnce();
+    expect(startMany.mock.calls[0][0]).toEqual([
+      expect.objectContaining({
+        track: expect.objectContaining({ source: "kugou", id: "kg-online" }),
+        qualitySelection: "kugou:kugou-master",
+        qualityLevel: "jymaster",
+        minLevel: "hi-res",
+        replaceSourcePath: "D:/Music/test.mp3",
+      }),
+    ]);
     wrapper.unmount();
   });
 

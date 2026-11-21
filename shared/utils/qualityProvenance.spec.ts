@@ -52,10 +52,10 @@ describe("平台音质标识依据", () => {
   });
 
   it.each(["qq-master-4.0", "臻品母带4.0", "臻品母带 4.0"])(
-    "QQ 明确回执 %s 识别为 4.0，不能从请求或其他平台推定",
+    "QQ 版本回执 %s 归一到 canonical qq-master，请求回显或跨平台仍拒绝",
     (nativeTier) => {
       expect(resolveQualityBadge(masterFile, declared("qqmusic", nativeTier))).toMatchObject({
-        tier: "qq-master-4",
+        tier: "qq-master",
         level: "jymaster",
         mismatch: false,
       });
@@ -88,6 +88,33 @@ describe("平台音质标识依据", () => {
     ).toBeUndefined();
   });
 
+  it.each([
+    "master",
+    "qq-master",
+    "jymaster",
+    "臻品母带",
+    "qq-master-4.0",
+    "臻品母带4.0",
+    "qq-master-2.0",
+    "臻品母带2.0",
+  ])(
+    "QQ 母带回执 %s 与 canonical 同一徽标，24bit/192kHz 达标、16bit/44.1kHz 仍矛盾",
+    (nativeTier) => {
+      const info = declared("qqmusic", nativeTier);
+      expect(resolveQualityBadge(masterFile, info)).toMatchObject({
+        tier: "qq-master",
+        level: "jymaster",
+        mismatch: false,
+      });
+      // 原始版本串不做归一，仅供追溯
+      expect(info.nativeTier).toBe(nativeTier);
+      expect(resolveQualityBadge(losslessFile, info)).toMatchObject({
+        tier: undefined,
+        mismatch: true,
+      });
+    },
+  );
+
   it("插件品牌名与历史文件来源分别保留", () => {
     expect(resolveQualityBadge(masterFile, declared("kuwo", "大师音质")).tier).toBe(
       "kuwo-master-quality",
@@ -107,7 +134,7 @@ describe("平台音质标识依据", () => {
     ).toBe("kuwo-premium");
   });
 
-  it("QQ 通用母带回执保留品牌，不自动冒充 4.0", () => {
+  it("QQ 通用母带回执保留 canonical 品牌", () => {
     const info = provenanceFromPlugin(
       {
         url: "https://audio/file",

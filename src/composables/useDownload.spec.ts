@@ -139,14 +139,21 @@ describe("旧默认目标兼容映射（resolveDownloadTarget）", () => {
     expect(spatial).toEqual({ ok: false, reason: "unsupported" });
   });
 
-  it("旧母带 2.0 显式选择归一到母带 4.0 目标", () => {
-    const target = resolveDownloadTarget("qqmusic", "hq", undefined, {
-      qualitySelection: "qqmusic:qq-master-2.0",
-    });
-    expect(target.ok).toBe(true);
-    if (!target.ok) return;
-    expect(target.qualitySelection).toBe("qqmusic:qq-master-4.0");
-    expect(target.level).toBe("jymaster");
+  it("QQ 旧母带 2.0/4.0 与规范 master 选择统一归一到母带统一目标", () => {
+    for (const selection of [
+      "qqmusic:master",
+      "qqmusic:qq-master-4.0",
+      "qqmusic:qq-master-2.0",
+      "qqmusic:qq-master",
+    ]) {
+      const target = resolveDownloadTarget("qqmusic", "hq", undefined, {
+        qualitySelection: selection,
+      });
+      expect(target.ok, selection).toBe(true);
+      if (!target.ok) continue;
+      expect(target.qualitySelection).toBe("qqmusic:master");
+      expect(target.level).toBe("jymaster");
+    }
   });
 
   it("显式旧档位覆盖时忽略全局具体选择，只按档位映射", () => {
@@ -205,10 +212,11 @@ describe("下载菜单（buildDownloadQualityItems）", () => {
     }
   });
 
-  it("QQ 菜单含母带4.0与全景声 plain/plus，不含已下线臻品与网易专属档", () => {
+  it("QQ 菜单含统一母带与全景声 plain/plus，不含已下线臻品与网易专属档", () => {
     const items = buildDownloadQualityItems("跟随默认", "download:", "qqmusic");
     const keys = items.slice(1).map((item) => item.key);
-    expect(keys).toContain("download:qqmusic:qq-master-4.0");
+    expect(keys).toContain("download:qqmusic:master");
+    expect(keys).not.toContain("download:qqmusic:qq-master-4.0");
     expect(keys).toContain("download:qqmusic:qq-spatial");
     expect(keys).toContain("download:qqmusic:qq-spatial-2.0");
     expect(

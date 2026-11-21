@@ -1,3 +1,4 @@
+/* eslint-disable vue/one-component-per-file -- 同一设置项的交互测试集中声明组件替身 */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import { computed, defineComponent, h } from "vue";

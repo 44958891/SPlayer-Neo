@@ -70,7 +70,7 @@ describe("已下载文件音质依据按印章复用", () => {
     state.db.exec(`
       CREATE TABLE download_tasks (
         task_id TEXT PRIMARY KEY, track_json TEXT NOT NULL, quality_level TEXT NOT NULL,
-        quality_selection TEXT,
+        quality_selection TEXT, target_dir TEXT, replace_source_path TEXT, min_level TEXT,
         status TEXT NOT NULL, received INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,
         file_path TEXT, error_code TEXT, tag_warning INTEGER NOT NULL DEFAULT 0,
         probed INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, finished_at INTEGER

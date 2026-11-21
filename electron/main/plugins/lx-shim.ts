@@ -30,7 +30,7 @@ import { findPlatformQuality } from "../../../shared/utils/platformQuality";
  * kw 128k/320k/flac/master；kg 增 hires/atmos；tx 增 atmos_plus；wy 增 192k/jyeffect/sky；mg 增 hires
  * - atmos（QQ 平原全景声 qqmusic:qq-spatial）与 atmos_plus（全景声 2.0 qqmusic:qq-spatial-2.0）
  *   同落宿主 sky，但具体选择 ID 与请求原档严格区分、互不替代
- * - master 落宿主 jymaster；通用 master 候选可以请求，但回执 master 仅证明母带品牌档，不证明母带 4.0
+ * - master 落宿主 jymaster；QQ 母带统一请求 master，历史版本名只作兼容
  */
 const LX_TO_HOST_QUALITY: Record<string, PluginQuality> = {
   "128k": "lq",
@@ -57,8 +57,12 @@ const LX_TO_HOST_QUALITY: Record<string, PluginQuality> = {
   jyeffect: "jyeffect",
   surround: "jyeffect",
   master: "jymaster",
+  "qq-master": "jymaster",
+  臻品母带: "jymaster",
   "qq-master-4.0": "jymaster",
   "臻品母带4.0": "jymaster",
+  "qq-master-2.0": "jymaster",
+  "臻品母带2.0": "jymaster",
   jymaster: "jymaster",
 };
 
@@ -96,10 +100,14 @@ const HOST_TO_LX_QUALITY: Record<PluginQuality, string> = {
 /** 宿主档位 → 候选 lx 音质字符串（优先级从高到低，含降档链） */
 const HOST_TO_LX_CANDIDATES: Record<PluginQuality, readonly string[]> = {
   jymaster: [
-    "qq-master-4.0",
-    "臻品母带4.0",
     "master",
     "jymaster",
+    "qq-master",
+    "臻品母带",
+    "qq-master-4.0",
+    "臻品母带4.0",
+    "qq-master-2.0",
+    "臻品母带2.0",
     "hires",
     "flac24bit",
     "flac",
@@ -784,10 +792,7 @@ export const installLxShim = (
           : {}),
       };
       const raw = await Promise.resolve(requestHandler({ source, action, info }));
-      const requestedSelection =
-        typeof reqObj.qualitySelection === "string" && reqObj.qualitySelection
-          ? reqObj.qualitySelection
-          : undefined;
+      const requestedSelection = selection?.id;
       // 字符串回包只是请求回显：quality 取请求换算档位，requestedTier 记录请求的 lx 档位，
       // 不虚构实际来源与响应原生档位
       if (typeof raw === "string") {

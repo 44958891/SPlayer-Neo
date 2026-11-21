@@ -76,6 +76,6 @@ export const initDownloadResolver = (): (() => void) =>
               ? "download.resolveNoPlugin"
               : "download.resolveFailed";
         toast.error(i18n.global.t(key, { title: payload.track.title }));
-        void window.api.download.failResolution(payload.taskId);
+        void window.api.download.failResolution(payload.taskId, code);
       });
   });

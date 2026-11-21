@@ -398,6 +398,10 @@
     "noResults": "No matching results",
     "noResultsHint": "Try another keyword or switch the source",
     "errorTitle": "Search failed",
+    "qqUnavailable": "QQ Music is temporarily unavailable",
+    "cachedResults": "Showing cached results from {time}",
+    "tryOtherPlatform": "Try another platform",
+    "errorDetails": "Error details",
     "tabs": {
       "songs": "Songs",
       "albums": "Albums",
@@ -623,7 +627,7 @@
         "hi-res": "Hi-Res",
         "premium": "Premium Sound 2.0",
         "spatial": "Premium Spatial Audio",
-        "master": "Premium Master 4.0",
+        "master": "Premium Master",
         "spatial-plus": "Premium Spatial Audio 2.0"
       },
       "kugou": {
@@ -641,7 +645,7 @@
         "hi-res": "Hi-Res",
         "premium": "Premium Sound 2.0",
         "spatial": "Premium Spatial Audio",
-        "master": "Master Quality"
+        "master": "Kuwo Master"
       },
       "migu": {
         "standard": "Standard 128K",
@@ -674,7 +678,7 @@
       "netease-sky": "Immersive Surround (Sky)",
       "netease-surround": "HD Vivid Audio (JYEffect)",
       "qq-master": "Premium Master",
-      "qq-master-4": "Premium Master 4.0",
+      "qq-master-4": "Premium Master",
       "qq-premium": "Premium Sound 2.0",
       "qq-spatial": "Premium Spatial Audio",
       "kuwo-master": "Kuwo Master",
@@ -686,7 +690,7 @@
       "migu-premium": "Migu Premium Audio",
       "migu-spatial": "Migu Spatial Audio",
       "qq-spatial-2": "Premium Spatial Audio 2.0",
-      "kuwo-master-quality": "Master Quality"
+      "kuwo-master-quality": "Kuwo Master"
     },
     "evidence": {
       "measured": "Specs measured from the decoded file",
@@ -833,7 +837,7 @@
       "interrupted": "Interrupted"
     },
     "failReason": {
-      "DOWNLOAD_QUALITY_NOT_MET": "No version available at the selected quality (only lower quality returned), file not saved",
+      "DOWNLOAD_QUALITY_NOT_MET": "The source did not meet the selected quality specifications or tier confirmation requirements; file not saved",
       "DOWNLOAD_INVALID_FILE": "The source returned an invalid or encrypted file",
       "SOURCE_PROBE_REJECTED": "Source only offers a preview clip, or the link has expired",
       "NO_PLUGIN_AVAILABLE": "No music source plugin available",

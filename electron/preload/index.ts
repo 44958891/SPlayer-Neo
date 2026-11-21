@@ -519,8 +519,9 @@ const api = {
     // 回传即时解析结果
     submitResolution: (taskId: string, res: unknown) =>
       ipcRenderer.invoke("download:resolution", taskId, res),
-    // 上报即时解析失败
-    failResolution: (taskId: string) => ipcRenderer.invoke("download:resolveFailed", taskId),
+    // 上报即时解析失败（带原因码，主进程按 ErrorCode 白名单过滤后落库）
+    failResolution: (taskId: string, errorCode?: string) =>
+      ipcRenderer.invoke("download:resolveFailed", taskId, errorCode),
     // 删除一条任务记录
     remove: (taskId: string) => ipcRenderer.invoke("download:remove", taskId),
     // 清空已结束任务

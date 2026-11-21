@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 
 /** 当前 schema 版本 */
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 type TableInfoRow = { name: string };
 
@@ -74,6 +74,21 @@ export const migrate = (d: Database.Database): void => {
       d.exec("ALTER TABLE download_tasks ADD COLUMN quality_selection TEXT");
     }
     v = 7;
+  }
+
+  // v7 → v8: 下载任务持久化升级参数（落地目录/待替换原文件/显式物理下限），
+  // 重启后失败任务重试仍可继续原位升级；旧行为 NULL 照常兼容
+  if (v < 8) {
+    if (!hasColumn(d, "download_tasks", "target_dir")) {
+      d.exec("ALTER TABLE download_tasks ADD COLUMN target_dir TEXT");
+    }
+    if (!hasColumn(d, "download_tasks", "replace_source_path")) {
+      d.exec("ALTER TABLE download_tasks ADD COLUMN replace_source_path TEXT");
+    }
+    if (!hasColumn(d, "download_tasks", "min_level")) {
+      d.exec("ALTER TABLE download_tasks ADD COLUMN min_level TEXT");
+    }
+    v = 8;
   }
 
   // 版本无关部分

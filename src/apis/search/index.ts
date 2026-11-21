@@ -12,11 +12,22 @@ import * as kugou from "./kugou";
 import * as kuwo from "./kuwo";
 import * as migu from "./migu";
 
+/** 主进程陈旧缓存恢复标记 */
+export interface SearchRecovery {
+  kind: "cache";
+  /** 缓存生成时间（毫秒） */
+  cachedAt: number;
+}
+
 /** 搜索结果通用 */
 export interface SearchResult<T> {
   items: T[];
   total: number;
   hasMore: boolean;
+  /** 按接口页码推进的偏移量，避免稀疏页按显示条数重复请求 */
+  nextOffset?: number;
+  /** 命中主进程缓存恢复时携带，仅内置平台返回 */
+  searchRecovery?: SearchRecovery;
 }
 
 const unsupported = (platform: Platform, category: string): never => {

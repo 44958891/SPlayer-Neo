@@ -9,7 +9,7 @@
 import type { AudioQuality } from "../types/player";
 import type { Platform } from "../types/platform";
 import type { PluginQuality } from "../types/plugin";
-import type { QualityFamily, QualityProvenance } from "../types/quality";
+import type { PlatformQualityOption, QualityFamily, QualityProvenance } from "../types/quality";
 import { isPlatform } from "../types/platform";
 import { findPlatformQuality } from "./platformQuality";
 import { levelMeets } from "./quality";
@@ -20,9 +20,34 @@ const DECLARED_TIER: Partial<
   Record<Platform, Partial<Record<QualityFamily, readonly BrandedQualityTier[]>>>
 > = {
   netease: { surround: ["netease-surround"], spatial: ["netease-sky"] },
-  qqmusic: { master: ["qq-master-4"], spatial: ["qq-spatial"], "spatial-plus": ["qq-spatial-2"] },
+  // 母带回执统一归一 canonical qq-master；旧 4.0 规范名仅为类型兼容，回执已不再产出，保留无害
+  qqmusic: {
+    master: ["qq-master", "qq-master-4"],
+    spatial: ["qq-spatial"],
+    "spatial-plus": ["qq-spatial-2"],
+  },
   kuwo: { master: ["kuwo-master-quality", "kuwo-master"] },
   kugou: { spatial: ["kugou-spatial"], master: ["kugou-master"] },
+};
+
+/** 取链阶段只检查档位回执，文件规格仍由落盘后的完整校验负责
+ * @param option - 当前平台的具体目标
+ * @param provenance - 提供者返回的来源与原生档位证据
+ * @returns 来源和品牌回执是否与目标一致
+ */
+export const qualityDeclarationMeets = (
+  option: PlatformQualityOption,
+  provenance: QualityProvenance | undefined,
+): boolean => {
+  if (!option.requiresDeclaration) return true;
+  if (
+    provenance?.platform !== option.platform ||
+    (provenance.evidence !== "response" && provenance.evidence !== "plugin")
+  )
+    return false;
+  const expected = DECLARED_TIER[option.platform]?.[option.family];
+  const badge = resolveQualityBadge(undefined, provenance);
+  return Boolean(expected && badge.tier && expected.includes(badge.tier));
 };
 
 /** 校验输入 */
@@ -60,16 +85,8 @@ export const downloadQualityMeets = (check: DownloadQualityCheck): boolean | und
   if (!option.requiresDeclaration)
     return levelMeets(check.quality, option.minimumLevel ?? option.level);
   if (option.minimumLevel && !levelMeets(check.quality, option.minimumLevel)) return false;
-  const provenance = check.provenance;
-  const trusted =
-    provenance?.platform === option.platform &&
-    (provenance.evidence === "response" || provenance.evidence === "plugin");
-  if (!trusted) return false;
-  const expectedTier = DECLARED_TIER[option.platform]?.[option.family];
-  // resolveQualityBadge 只在 evidence=response/plugin 且 nativeTier 命中平台品牌表时给出 tier；
-  // mismatch 覆盖 premium 的 Hi-Res 物理规格矛盾（非无损 / 位深或采样率不足）
-  const badge = resolveQualityBadge(check.quality, provenance);
-  return Boolean(
-    expectedTier && badge.tier && expectedTier.includes(badge.tier) && !badge.mismatch,
-  );
+  if (!qualityDeclarationMeets(option, check.provenance)) return false;
+  // 已匹配回执仍须通过文件实测，取链阶段的优先级不能替代物理规格校验
+  const badge = resolveQualityBadge(check.quality, check.provenance);
+  return Boolean(badge.tier && !badge.mismatch);
 };

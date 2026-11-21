@@ -316,13 +316,13 @@ describe("具体平台音质选择", () => {
     assert.equal(res.sourceEvidence, "gzPlayback-v1");
   });
 
-  it("母带 4.0 声明缺精确档时回退通用 master 原档，回执 master 不证明 4 版", async () => {
+  it("QQ 母带统一请求 master，旧 4.0 选择保留原始回执", async () => {
     const seenTypes: string[] = [];
     const dispatch = await setupWithSources(
       {
         tx: {
           actions: ["musicUrl"],
-          qualitys: ["flac", "master"],
+          qualitys: ["flac", "master", "qq-master-4.0"],
           gzQualityEvidenceVersion: 1,
         },
       },
@@ -332,13 +332,11 @@ describe("具体平台音质选择", () => {
       },
     );
     const res = await callWithSelection(dispatch, "qqmusic:qq-master-4.0", "jymaster", "tx");
-    // 通用 master 候选可以请求
     assert.deepEqual(seenTypes, ["master"]);
     assert.equal(res.quality, "jymaster");
-    // 回执 master 与 4.0 原档不同：仅证明母带品牌档，不证明母带 4.0
     assert.equal(res.nativeTier, "master");
-    assert.notEqual(res.nativeTier, "qq-master-4.0");
-    assert.equal(res.requestedSelection, "qqmusic:qq-master-4.0");
+    assert.equal(res.requestedTier, "master");
+    assert.equal(res.requestedSelection, "qqmusic:master");
     assert.equal(res.sourceEvidence, "gzPlayback-v1");
   });
 
@@ -374,7 +372,7 @@ describe("具体平台音质选择", () => {
     assert.equal(scriptCalled, false);
   });
 
-  it("历史品牌别名：旧母带 2.0 选择解析到母带 4.0 候选原档", async () => {
+  it("历史母带选择映射为统一 master，只有旧原档声明时仍兼容脚本", async () => {
     const seenTypes: string[] = [];
     const dispatch = await setupWithSources(
       { tx: { actions: ["musicUrl"], qualitys: ["flac", "qq-master-4.0"] } },

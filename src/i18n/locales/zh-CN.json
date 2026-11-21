@@ -398,6 +398,10 @@
     "noResults": "没有找到匹配内容",
     "noResultsHint": "换个关键词或切换音源试试",
     "errorTitle": "搜索失败",
+    "qqUnavailable": "QQ音乐服务暂时不可用",
+    "cachedResults": "正在展示 {time} 的缓存结果",
+    "tryOtherPlatform": "换个平台试试",
+    "errorDetails": "错误详情",
     "tabs": {
       "songs": "单曲",
       "albums": "专辑",
@@ -623,7 +627,7 @@
         "hi-res": "高解析 Hi-Res",
         "premium": "臻品音质 2.0",
         "spatial": "臻品全景声",
-        "master": "臻品母带 4.0",
+        "master": "臻品母带",
         "spatial-plus": "臻品全景声 2.0"
       },
       "kugou": {
@@ -641,7 +645,7 @@
         "hi-res": "Hi-Res 音质",
         "premium": "至臻音质 2.0",
         "spatial": "至臻全景声",
-        "master": "大师音质"
+        "master": "至臻母带"
       },
       "migu": {
         "standard": "标准 128K",
@@ -674,7 +678,7 @@
       "netease-sky": "沉浸环绕声",
       "netease-surround": "高清臻音",
       "qq-master": "臻品母带",
-      "qq-master-4": "臻品母带 4.0",
+      "qq-master-4": "臻品母带",
       "qq-premium": "臻品音质 2.0",
       "qq-spatial": "臻品全景声",
       "kuwo-master": "至臻母带",
@@ -686,7 +690,7 @@
       "migu-premium": "至臻音质",
       "migu-spatial": "至臻全景声",
       "qq-spatial-2": "臻品全景声 2.0",
-      "kuwo-master-quality": "大师音质"
+      "kuwo-master-quality": "至臻母带"
     },
     "evidence": {
       "measured": "参数来自文件解码实测",
@@ -833,7 +837,7 @@
       "interrupted": "已中断"
     },
     "failReason": {
-      "DOWNLOAD_QUALITY_NOT_MET": "所选音质没有可用版本（实际只拿到更低音质），未保存文件",
+      "DOWNLOAD_QUALITY_NOT_MET": "当前音源未满足所选音质的规格或档位确认要求，未保存文件",
       "DOWNLOAD_INVALID_FILE": "音源返回的文件无效或已加密",
       "SOURCE_PROBE_REJECTED": "音源只提供试听片段或链接已失效",
       "NO_PLUGIN_AVAILABLE": "没有可用的音源插件",

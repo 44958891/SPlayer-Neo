@@ -78,7 +78,7 @@ describe("音质依据持久化", () => {
     ).run();
     d.pragma("user_version = 5");
     migrate(d);
-    expect(d.pragma("user_version", { simple: true })).toBe(7);
+    expect(d.pragma("user_version", { simple: true })).toBe(8);
     const cols = (d.prepare("PRAGMA table_info(song_cache)").all() as { name: string }[]).map(
       (c) => c.name,
     );
@@ -136,7 +136,7 @@ describe("音质依据持久化", () => {
     d.exec(`
       CREATE TABLE download_tasks (
         task_id TEXT PRIMARY KEY, track_json TEXT NOT NULL, quality_level TEXT NOT NULL,
-        quality_selection TEXT,
+        quality_selection TEXT, target_dir TEXT, replace_source_path TEXT, min_level TEXT,
         status TEXT NOT NULL, received INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,
         file_path TEXT, error_code TEXT, tag_warning INTEGER NOT NULL DEFAULT 0,
         probed INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, finished_at INTEGER
@@ -159,7 +159,7 @@ describe("音质依据持久化", () => {
     d.exec(`
       CREATE TABLE download_tasks (
         task_id TEXT PRIMARY KEY, track_json TEXT NOT NULL, quality_level TEXT NOT NULL,
-        quality_selection TEXT,
+        quality_selection TEXT, target_dir TEXT, replace_source_path TEXT, min_level TEXT,
         status TEXT NOT NULL, received INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,
         file_path TEXT, error_code TEXT, tag_warning INTEGER NOT NULL DEFAULT 0,
         probed INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, finished_at INTEGER

@@ -104,6 +104,9 @@ describe("平台音质目录", () => {
     expect(findPlatformQuality("netease:sky", "netease")?.family).toBe("spatial");
     expect(findPlatformQuality("netease:sky", "qqmusic")).toBeUndefined();
     expect(findPlatformQuality(undefined)).toBeUndefined();
+    // 旧母带选择归一到 qqmusic:master，跨平台仍拒绝
+    expect(findPlatformQuality("qqmusic:qq-master-4.0", "qqmusic")?.id).toBe("qqmusic:master");
+    expect(findPlatformQuality("qqmusic:qq-master-2.0", "netease")).toBeUndefined();
   });
 });
 
@@ -186,11 +189,15 @@ describe("播放菜单可用性", () => {
     expect(canPlayQualityOption(kugouMaster, other)).toBe(false);
   });
 
-  it("精确增强/空间档必须命中原生声明；旧脚本未声明不放行", () => {
+  it("精确增强/空间档必须命中原生声明；母带统一目标按归一候选命中", () => {
     const undeclared = collectQualityCapabilities("netease", [plugin("old", "wy")]);
     expect(canPlayQualityOption(neteaseSky, undeclared)).toBe(true); // 官方档不受影响
-    // QQ 母带 4.0 需要插件声明：精确 4.0 与通用母带命中，旧 2.0/generic 回执不放行
-    const qqMaster = findPlatformQuality("qqmusic:qq-master-4.0", "qqmusic")!;
+    // QQ 母带统一目标：规范 id 与旧 4.0 选择都归一到 qqmusic:master，需要插件声明
+    const qqMaster = findPlatformQuality("qqmusic:master", "qqmusic")!;
+    const qqLegacy4 = findPlatformQuality("qqmusic:qq-master-4.0", "qqmusic")!;
+    expect(qqMaster.id).toBe("qqmusic:master");
+    expect(qqLegacy4.id).toBe("qqmusic:master");
+    expect(qqLegacy4.nativeTier).toBe("master");
     expect(
       canPlayQualityOption(qqMaster, {
         hasPlugin: false,
@@ -200,18 +207,16 @@ describe("播放菜单可用性", () => {
     ).toBe(false);
     const qqUndeclared = collectQualityCapabilities("qqmusic", [plugin("old", "tx")]);
     expect(canDownloadQualityOption(qqMaster, qqUndeclared)).toBe(false);
-    const legacyMiss = collectQualityCapabilities("qqmusic", [
-      plugin("p", "tx", { nativeQualities: ["qq-master-2.0", "qq-master"] }),
+    // 统一后旧 2.0/4.0 历史回执与 generic master 都是母带候选
+    const legacy2Hit = collectQualityCapabilities("qqmusic", [
+      plugin("p", "tx", { nativeQualities: ["qq-master-2.0", "QQ-Master-4.0"] }),
     ]);
-    expect(canDownloadQualityOption(qqMaster, legacyMiss)).toBe(false);
+    expect(canDownloadQualityOption(qqLegacy4, legacy2Hit)).toBe(true);
     const genericHit = collectQualityCapabilities("qqmusic", [
       plugin("p", "tx", { nativeQualities: ["Master"] }),
     ]);
     expect(canDownloadQualityOption(qqMaster, genericHit)).toBe(true);
-    const exactHit = collectQualityCapabilities("qqmusic", [
-      plugin("p", "tx", { nativeQualities: ["QQ-Master-4.0"] }),
-    ]);
-    expect(canPlayQualityOption(qqMaster, exactHit)).toBe(true);
+    expect(canPlayQualityOption(qqLegacy4, genericHit)).toBe(true);
     const kugouSky = findPlatformQuality("kugou:kugou-spatial", "kugou")!;
     const atmosMiss = collectQualityCapabilities("kugou", [
       plugin("p", "kg", { nativeQualities: ["flac"] }),

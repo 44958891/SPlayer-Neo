@@ -1,4 +1,5 @@
 import { validateQualityProvenance } from "@shared/utils/qualityProvenance";
+import { QUALITY_ORDER } from "@shared/utils/quality";
 import type { ResolvedAudioFile } from "@shared/types/quality";
 import type { DownloadTask, DownloadTrackIdentity } from "@shared/types/download";
 import type { Track } from "@shared/types/player";
@@ -19,32 +20,46 @@ interface RawRow {
   probed: number;
   created_at: number;
   finished_at: number | null;
+  target_dir: string | null;
+  replace_source_path: string | null;
+  min_level: string | null;
 }
 
 /** sqlite 行 → 业务 DownloadTask */
-const toTask = (raw: RawRow): DownloadTask => ({
-  taskId: raw.task_id,
-  track: JSON.parse(raw.track_json) as Track,
-  qualityLevel: raw.quality_level as DownloadTask["qualityLevel"],
-  qualitySelection: raw.quality_selection ?? undefined,
-  status: raw.status as DownloadTask["status"],
-  received: raw.received,
-  total: raw.total,
-  filePath: raw.file_path ?? undefined,
-  errorCode: raw.error_code ?? undefined,
-  tagWarning: raw.tag_warning === 1,
-  probed: raw.probed === 1,
-  createdAt: raw.created_at,
-  finishedAt: raw.finished_at ?? undefined,
-});
+const toTask = (raw: RawRow): DownloadTask => {
+  // 升级参数旧行为 NULL → undefined，不猜测原路径；min_level 严格按档位枚举校验，未知值丢弃
+  const minLevel =
+    raw.min_level != null &&
+    QUALITY_ORDER.includes(raw.min_level as NonNullable<DownloadTask["minLevel"]>)
+      ? (raw.min_level as NonNullable<DownloadTask["minLevel"]>)
+      : undefined;
+  return {
+    taskId: raw.task_id,
+    track: JSON.parse(raw.track_json) as Track,
+    qualityLevel: raw.quality_level as DownloadTask["qualityLevel"],
+    qualitySelection: raw.quality_selection ?? undefined,
+    status: raw.status as DownloadTask["status"],
+    received: raw.received,
+    total: raw.total,
+    filePath: raw.file_path ?? undefined,
+    errorCode: raw.error_code ?? undefined,
+    tagWarning: raw.tag_warning === 1,
+    probed: raw.probed === 1,
+    createdAt: raw.created_at,
+    finishedAt: raw.finished_at ?? undefined,
+    targetDir: raw.target_dir ?? undefined,
+    replaceSourcePath: raw.replace_source_path ?? undefined,
+    minLevel,
+  };
+};
 
 /** 写入或覆盖一条任务 */
 export const upsert = (task: DownloadTask): void => {
   getDb()
     .prepare(
       `INSERT INTO download_tasks
-         (task_id, track_json, quality_level, quality_selection, status, received, total, file_path, error_code, tag_warning, probed, created_at, finished_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (task_id, track_json, quality_level, quality_selection, status, received, total, file_path, error_code, tag_warning, probed, created_at, finished_at, target_dir, replace_source_path, min_level)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(task_id) DO UPDATE SET
          track_json = excluded.track_json,
          quality_level = excluded.quality_level,
@@ -56,7 +71,10 @@ export const upsert = (task: DownloadTask): void => {
          error_code = excluded.error_code,
          tag_warning = excluded.tag_warning,
          probed = excluded.probed,
-         finished_at = excluded.finished_at`,
+         finished_at = excluded.finished_at,
+         target_dir = excluded.target_dir,
+         replace_source_path = excluded.replace_source_path,
+         min_level = excluded.min_level`,
     )
     .run(
       task.taskId,
@@ -72,6 +90,9 @@ export const upsert = (task: DownloadTask): void => {
       task.probed ? 1 : 0,
       task.createdAt,
       task.finishedAt ?? null,
+      task.targetDir ?? null,
+      task.replaceSourcePath ?? null,
+      task.minLevel ?? null,
     );
 };
 

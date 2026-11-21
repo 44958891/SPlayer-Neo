@@ -313,9 +313,22 @@ export const submitResolution = (taskId: string, res: DownloadResolution): void 
   resolutionGates.get(taskId)?.resolve(res);
 };
 
-/** 渲染层解析失败，任务按失败收尾 */
-export const failResolution = (taskId: string): void => {
-  resolutionGates.get(taskId)?.reject(new Error("resolve failed"));
+/** 校验跨进程传入的错误码是否为已知 ErrorCode，防止任意字符串注入任务记录
+ * @param value - 渲染层回传的错误码
+ * @returns 是否为枚举内的合法错误码
+ */
+const isKnownErrorCode = (value: unknown): value is ErrorCode =>
+  typeof value === "string" && (Object.values(ErrorCode) as string[]).includes(value);
+
+/** 渲染层解析失败，任务按失败收尾；错误码经白名单校验后随任务落库，缺省或非法按 UNKNOWN 兜底
+ * @param taskId - 任务 ID
+ * @param errorCode - 渲染层解析失败的具体原因码
+ */
+export const failResolution = (taskId: string, errorCode?: string): void => {
+  const gate = resolutionGates.get(taskId);
+  if (!gate) return;
+  const code = isKnownErrorCode(errorCode) ? errorCode : undefined;
+  gate.reject(Object.assign(new Error("resolve failed"), code ? { errorCode: code } : {}));
 };
 
 /** 实际下载 + 落盘 + 写标签 */
@@ -420,24 +433,17 @@ const runTask = async (
     const selectionOption = req.qualitySelection
       ? findPlatformQuality(req.qualitySelection)
       : undefined;
-    /**
-     * 落盘档位下限：
-     * - 升级任务：目标档位（请求显式下限）与原文件实测档位取最高——只升不降，
-     *   原文件损坏探测不出档位时由请求下限兜底
-     * - 普通下载：必须达到用户所选档位——宁可在下载页报错，也不静默降级成低音质
-     *   （此前普通下载传 null，档位校验被整个跳过，选了 Master 拿到 Lossless 也会成功）
-     * - 声明类选择（臻品/空间/环绕）不走通用大小序：臻品按物理规格卡 Hi-Res，
-     *   空间/环绕交给 downloadQualityMeets 的声明校验
-     * - 流媒体：取流地址的档位由服务端决定，不做限制
-     */
+    // 品牌目标按平台保证规格校验，显式物理下限与原文件实测仍参与升级保护
+    const selectionFloor = selectionOption?.requiresDeclaration
+      ? (selectionOption.minimumLevel ?? (selectionOption.family === "premium" ? "hi-res" : null))
+      : (selectionOption?.level ?? req.qualityLevel);
     const minLevel: QualityLevel | null = replaceSource
-      ? maxQualityLevel(req.minLevel, probedLevel, req.qualityLevel)
+      ? selectionOption
+        ? maxQualityLevel(req.minLevel, selectionFloor, probedLevel)
+        : maxQualityLevel(req.minLevel, probedLevel, req.qualityLevel)
       : req.track.source === "streaming"
         ? null
-        : selectionOption?.requiresDeclaration
-          ? (selectionOption.minimumLevel ??
-            (selectionOption.family === "premium" ? "hi-res" : null))
-          : req.qualityLevel;
+        : selectionFloor;
 
     // 先校验候选文件再落位覆盖：无效数据（音源加密/损坏）必拒；
     // 实际档位低于下限也拒。杜绝"先覆盖再发现是垃圾"导致原文件丢失
@@ -564,8 +570,9 @@ const probeFileLevel = async (filePath: string): Promise<QualityLevel | null> =>
  * - 解析不出编解码器（音源返回加密/损坏数据）→ DOWNLOAD_INVALID_FILE
  * - 实际档位低于要求下限 → DOWNLOAD_QUALITY_NOT_MET
  * @param minLevel - 允许落盘的最低档位。
- *   升级场景传「请求显式下限 ?? 原文件档位」；普通下载传「请求档位」。
- *   传 null 才表示不做档位限制（仅用于流媒体等无法声明档位的来源）。
+ *   升级场景带平台选择传「显式下限、selection 物理下限与原文件档位取最高」，
+ *   无选择传「请求显式下限/请求档位 与 原文件档位取最高」；普通下载传「请求档位」。
+ *   传 null 才表示不做档位限制（仅用于流媒体与空间等无法声明物理规格的来源）。
  */
 const verifyDownloadCandidate = async (
   filePath: string,

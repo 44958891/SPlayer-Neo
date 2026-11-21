@@ -140,38 +140,44 @@ describe("实际播放档位验证", () => {
     ).toBe("unconfirmed");
   });
 
-  it("臻品母带4.0：精确 4 回执 + 母带规格文件达标", () => {
+  it("臻品母带：任一别名回执 + 24bit/192kHz 文件按 canonical master 达标", () => {
     expect(
       assessPlaybackQuality({
-        selection: "qqmusic:qq-master-4.0",
+        selection: "qqmusic:master",
         source: "plugin",
-        quality: { ...hires, sampleRate: 176400 },
-        provenance: source("qqmusic", "qq-master-4.0", "jymaster"),
+        quality: { ...hires, sampleRate: 192000 },
+        provenance: source("qqmusic", "臻品母带4.0", "jymaster"),
+      }),
+    ).toMatchObject({ selection: "qqmusic:master", state: "met" });
+  });
+
+  it.each([
+    "master",
+    "qq-master",
+    "jymaster",
+    "臻品母带",
+    "qq-master-4.0",
+    "臻品母带4.0",
+    "qq-master-2.0",
+    "臻品母带2.0",
+  ])("臻品母带：回执 %s 与 canonical 同一达标结果，不再区分版本", (nativeTier) => {
+    expect(
+      assessPlaybackQuality({
+        selection: "qqmusic:master",
+        source: "plugin",
+        quality: { ...hires, sampleRate: 192000 },
+        provenance: source("qqmusic", nativeTier, "jymaster"),
       }).state,
     ).toBe("met");
   });
 
-  it.each(["master", "qq-master-2.0"])(
-    "臻品母带4.0：回执 %s 只归一母带品牌，不冒充 4.0 达标",
-    (nativeTier) => {
-      expect(
-        assessPlaybackQuality({
-          selection: "qqmusic:qq-master-4.0",
-          source: "plugin",
-          quality: { ...hires, sampleRate: 176400 },
-          provenance: source("qqmusic", nativeTier, "jymaster"),
-        }).state,
-      ).toBe("unconfirmed");
-    },
-  );
-
   it.each([
-    { name: "CD 规格无损", quality: lossless },
-    { name: "Hi-Res 规格（不足母带）", quality: hires },
-  ])("臻品母带4.0：$name 未达最低母带规格 → 未达标", ({ quality }) => {
+    { name: "CD 规格无损 16bit/44.1kHz", quality: lossless },
+    { name: "Hi-Res 规格 24bit/96kHz（不足母带）", quality: hires },
+  ])("臻品母带：$name 未达最低母带规格 → 未达标", ({ quality }) => {
     expect(
       assessPlaybackQuality({
-        selection: "qqmusic:qq-master-4.0",
+        selection: "qqmusic:master",
         source: "plugin",
         quality,
         provenance: source("qqmusic", "qq-master-4.0", "jymaster"),

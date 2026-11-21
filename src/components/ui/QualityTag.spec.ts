@@ -33,7 +33,7 @@ const flac = (sampleRate: number, bitsPerSample: number): AudioQuality => ({
   channels: 2,
 });
 
-/** 官方响应确认的 QQ 臻品母带 4.0 来源证据 */
+/** 官方响应确认的 QQ 臻品母带历史 4.0 回执，归一后仍展示通用母带文案 */
 const qqMasterProvenance: QualityProvenance = {
   provider: "official",
   platform: "qqmusic",
@@ -80,8 +80,8 @@ describe("QualityTag 渲染", () => {
     );
     expect(wrapper.classes()).not.toContain("quality-tone--warning");
     expect(wrapper.classes()).not.toContain("quality-tone--cover");
-    expect(wrapper.text()).toBe("臻品母带 4.0");
-    expect(wrapper.find(".quality-name").text()).toBe("臻品母带 4.0");
+    expect(wrapper.text()).toBe("臻品母带");
+    expect(wrapper.find(".quality-name").text()).toBe("臻品母带");
     const tooltip = wrapper.find("span[title]").attributes("title") ?? "";
     expect(tooltip).toContain("QQ音乐");
     expect(tooltip).toContain("FLAC · 24bit · 192.0kHz");
@@ -284,7 +284,7 @@ describe("QualityTag 渲染", () => {
           level: "jymaster",
           evidence: "plugin",
         },
-        "大师音质",
+        "至臻母带",
       ],
     ];
     for (const [provenance, label] of cases) {

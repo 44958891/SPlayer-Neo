@@ -14,6 +14,7 @@ import {
   resolvePlatformQuality,
 } from "@shared/utils/platformQuality";
 import { provenanceFromPlugin, validateQualityProvenance } from "@shared/utils/qualityProvenance";
+import { qualityDeclarationMeets } from "@shared/utils/downloadQuality";
 import { qualityMeets, qualityRank, type QualityLevel } from "@/utils/quality";
 import { streamingSourceForTrack } from "@shared/utils/streamingSource";
 import { useSettingsStore } from "@/stores/settings";
@@ -522,6 +523,13 @@ export const resolveByPluginBest = async (
       );
       // 仍有非已知降档候选时不采用已知降档回执，交由其余候选或上层换源兜底
       if (knownLower.length < hits.length) pool = hits.filter((hit) => !knownLower.includes(hit));
+    }
+    if (explicitOption.requiresDeclaration) {
+      const confirmed = pool.filter((hit) =>
+        qualityDeclarationMeets(explicitOption, hit.provenance),
+      );
+      // 同档位的裸链接只是请求回显，存在真实匹配回执时不能先采用缺少证明的候选
+      if (confirmed.length > 0) pool = confirmed;
     }
   }
   let best = pool[0];

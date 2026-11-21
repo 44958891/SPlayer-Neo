@@ -50,6 +50,7 @@ export type BrandedQualityTier =
   | "netease-sky"
   | "netease-surround"
   | "qq-master"
+  /** 回执已统一归一到 qq-master，该成员仅为外部消费方类型兼容保留 */
   | "qq-master-4"
   | "qq-premium"
   | "qq-spatial"
@@ -79,15 +80,19 @@ const TIERS: Partial<Record<Platform, Readonly<Record<string, BrandedTier>>>> = 
     jyeffect: { tier: "netease-surround", level: "jyeffect", physical: "spatial" },
   },
   qqmusic: {
-    "qq-master-4.0": { tier: "qq-master-4", level: "jymaster", physical: "master" },
-    "臻品母带4.0": { tier: "qq-master-4", level: "jymaster", physical: "master" },
+    // 母带回执不再区分 2.0/4.0 版本，全部别名归一 canonical qq-master，原始版本串仅留在 nativeTier
+    "qq-master-4.0": { tier: "qq-master", level: "jymaster", physical: "master" },
+    "臻品母带4.0": { tier: "qq-master", level: "jymaster", physical: "master" },
     "qq-master-2.0": { tier: "qq-master", level: "jymaster", physical: "master" },
+    "臻品母带2.0": { tier: "qq-master", level: "jymaster", physical: "master" },
     master: { tier: "qq-master", level: "jymaster", physical: "master" },
+    "qq-master": { tier: "qq-master", level: "jymaster", physical: "master" },
+    jymaster: { tier: "qq-master", level: "jymaster", physical: "master" },
+    臻品母带: { tier: "qq-master", level: "jymaster", physical: "master" },
     atmos: { tier: "qq-spatial", level: "sky", physical: "spatial" },
     atmos_plus: { tier: "qq-spatial-2", level: "sky", physical: "spatial" },
     "qq-spatial-2.0": { tier: "qq-spatial-2", level: "sky", physical: "spatial" },
     "臻品全景声2.0": { tier: "qq-spatial-2", level: "sky", physical: "spatial" },
-    "臻品母带2.0": { tier: "qq-master", level: "jymaster", physical: "master" },
     "qq-premium-2.0": { tier: "qq-premium", level: "sky", physical: "hi-res" },
     "臻品音质2.0": { tier: "qq-premium", level: "sky", physical: "hi-res" },
     "qq-spatial": { tier: "qq-spatial", level: "sky", physical: "spatial" },

@@ -5,6 +5,7 @@ import type { PlaybackContext, Track } from "@shared/types/player";
 import { ALL_PLATFORMS, PLATFORM_SHORT_NAME, type Platform } from "@shared/types/platform";
 import type { CoverItem } from "@/types/artist";
 import { searchSongs, searchAlbums, searchArtists, searchPlaylists } from "@/apis/search";
+import type { SearchRecovery } from "@/apis/search";
 import SongList from "@/components/list/SongList.vue";
 import CoverList from "@/components/list/CoverList.vue";
 import * as player from "@/core/player";
@@ -91,20 +92,28 @@ interface TabState<T> {
   items: T[];
   total: number;
   page: number;
+  nextOffset: number;
   hasMore: boolean;
   loaded: boolean;
   loading: boolean;
   loadingMore: boolean;
+  /** 当前 tab 的失败信息（按 tab 隔离，追加失败不清空已有结果） */
+  error: string;
+  /** 内置平台命中主进程缓存恢复时的元数据 */
+  searchRecovery: SearchRecovery | null;
 }
 
 const createState = <T,>(): TabState<T> => ({
   items: [],
   total: 0,
   page: 0,
+  nextOffset: 0,
   hasMore: false,
   loaded: false,
   loading: false,
   loadingMore: false,
+  error: "",
+  searchRecovery: null,
 });
 
 const states = {
@@ -114,8 +123,6 @@ const states = {
   playlists: shallowReactive(createState<CoverItem>()),
 };
 let searchGeneration = 0;
-
-const error = ref("");
 
 /** 派发到 apis 层的统一调用 */
 const fetchers = {
@@ -132,12 +139,12 @@ const fetchers = {
  */
 const fetchTab = async (tab: TabKey, append: boolean): Promise<void> => {
   if (!keyword.value) return;
+  const state = states[tab];
   if (!pluginAvailable.value) {
-    error.value = t("errors.NO_PLUGIN_AVAILABLE");
+    state.error = t("errors.NO_PLUGIN_AVAILABLE");
     return;
   }
   const generation = searchGeneration;
-  const state = states[tab];
   if (append) {
     if (!state.loaded || state.loadingMore || !state.hasMore) return;
     state.loadingMore = true;
@@ -145,34 +152,54 @@ const fetchTab = async (tab: TabKey, append: boolean): Promise<void> => {
     if (state.loading) return;
     state.loading = true;
   }
-  error.value = "";
+  state.error = "";
   try {
-    const offset = append ? state.items.length : 0;
+    const offset = append ? state.nextOffset : 0;
     const page = append ? state.page + 1 : 1;
     const selection = pluginSelection.value;
-    const result = selection
-      ? await window.api.plugins.search({
-          ...selection,
-          keyword: keyword.value,
-          page,
-          limit: PAGE_SIZE,
-        })
-      : await (fetchers[tab] as typeof searchSongs)(
-          status.searchPlatform,
-          keyword.value,
-          offset,
-          PAGE_SIZE,
-        );
-    if (generation !== searchGeneration) return;
-    const items = result.items.map((item) => markRaw(item));
-    state.items = append ? ([...state.items, ...items] as Track[]) : (items as Track[]);
+    let items: Track[];
+    let total = 0;
+    let hasMore = false;
+    let nextOffset: number | undefined;
+    let recovery: SearchRecovery | null = null;
+    if (selection) {
+      const result = await window.api.plugins.search({
+        ...selection,
+        keyword: keyword.value,
+        page,
+        limit: PAGE_SIZE,
+      });
+      if (generation !== searchGeneration) return;
+      items = result.items;
+      total = result.total;
+      hasMore = result.hasMore;
+    } else {
+      const result = await (fetchers[tab] as typeof searchSongs)(
+        status.searchPlatform,
+        keyword.value,
+        offset,
+        PAGE_SIZE,
+      );
+      if (generation !== searchGeneration) return;
+      items = result.items;
+      total = result.total;
+      hasMore = result.hasMore;
+      nextOffset = result.nextOffset;
+      // 仅内置平台结果携带缓存恢复元数据，插件结果没有该字段
+      recovery = result.searchRecovery ?? null;
+    }
+    const mapped = items.map((item) => markRaw(item));
+    state.items = append ? ([...state.items, ...mapped] as Track[]) : (mapped as Track[]);
     state.page = page;
-    state.total = result.total;
-    state.hasMore = result.hasMore;
+    state.nextOffset = nextOffset ?? offset + items.length;
+    state.total = total;
+    state.hasMore = hasMore;
     state.loaded = true;
+    // 追加页未命中恢复时保留此前页的恢复标记，避免旧缓存页被新页顶掉横幅
+    state.searchRecovery = append ? (recovery ?? state.searchRecovery) : recovery;
   } catch (err) {
     if (generation !== searchGeneration) return;
-    error.value = err instanceof Error ? err.message : String(err);
+    state.error = err instanceof Error ? err.message : String(err);
   } finally {
     if (generation === searchGeneration) {
       state.loading = false;
@@ -187,12 +214,14 @@ const resetStates = (): void => {
     states[tab].items = [];
     states[tab].total = 0;
     states[tab].page = 0;
+    states[tab].nextOffset = 0;
     states[tab].hasMore = false;
     states[tab].loaded = false;
     states[tab].loading = false;
     states[tab].loadingMore = false;
+    states[tab].error = "";
+    states[tab].searchRecovery = null;
   });
-  error.value = "";
 };
 
 let lastLoadedKeyword = "";
@@ -254,10 +283,12 @@ const onPlatformSwitch = (key: string | number | boolean): void => {
   });
 };
 
-/** 失败后重试加载当前 tab */
+/** 失败后重试当前 tab：已有结果时仅重试失败的追加页，首屏失败则整页重来 */
 const onRetry = (): void => {
-  error.value = "";
-  fetchTab(activeTab.value, false);
+  const state = states[activeTab.value];
+  state.error = "";
+  const useAppend = state.loaded && state.items.length > 0 && state.hasMore;
+  fetchTab(activeTab.value, useAppend);
 };
 
 /** 滚动触底加载下一页 */
@@ -269,6 +300,49 @@ const onReachBottom = (tab: TabKey): void => {
 const isInitialLoading = computed(() => {
   const state = states[activeTab.value];
   return state.loading && !state.loaded;
+});
+
+/** 当前生效的 tab 状态 */
+const activeState = computed(() => states[activeTab.value]);
+
+/** 当前 tab 的错误信息 */
+const activeError = computed(() => activeState.value.error);
+
+/** 整页失败（首屏未拿到任何结果，用全页错误态展示） */
+const isFullError = computed(
+  () =>
+    Boolean(activeError.value) &&
+    (!activeState.value.loaded || activeState.value.items.length === 0),
+);
+
+/** 追加页失败（已有结果保留，用内联错误提示） */
+const hasInlineError = computed(() => Boolean(activeError.value) && !isFullError.value);
+
+/** 当前 tab 命中的缓存恢复元数据 */
+const activeRecovery = computed(() => activeState.value.searchRecovery);
+
+const isCacheRecovered = computed(() => activeRecovery.value?.kind === "cache");
+
+/** 缓存生成时间的本地化文本 */
+const cachedAtText = computed(() => {
+  const cachedAt = activeRecovery.value?.cachedAt;
+  return cachedAt ? new Date(cachedAt).toLocaleString() : "";
+});
+
+/** 错误态的友好提示：QQ 平台给专属文案，其余沿用通用标题（原始错误收进详情） */
+const friendlyErrorText = computed(() =>
+  !pluginSelection.value && status.searchPlatform === "qqmusic"
+    ? t("search.qqUnavailable")
+    : t("search.errorTitle"),
+);
+
+/** 错误态一键切换的其他平台（排除当前音源，插件音源时不排除任何内置平台） */
+const otherPlatforms = computed(() => {
+  const exclude = pluginSelection.value ? null : status.searchPlatform;
+  return ALL_PLATFORMS.filter((key) => key !== exclude).map((key) => ({
+    key,
+    label: PLATFORM_SHORT_NAME[key],
+  }));
 });
 
 /** 当前 tab 已加载且为空 */
@@ -361,18 +435,24 @@ const handlePlayAll = (): void => {
         <div class="text-sm">{{ t("search.emptyKeyword") }}</div>
       </div>
     </div>
-    <!-- 错误态 -->
-    <div v-else-if="error" class="flex-1 flex items-center justify-center px-6">
+    <!-- 整页错误态：首屏失败 -->
+    <div v-else-if="isFullError" class="flex-1 flex items-center justify-center px-6">
       <div class="text-center flex flex-col items-center">
         <div class="text-red-500/85 mb-4">
           <IconLucideTriangleAlert class="size-14 mx-auto mb-3 opacity-50" />
-          <div class="text-sm font-medium mb-1">{{ t("search.errorTitle") }}</div>
-          <div class="text-xs opacity-80 break-all max-w-xs">{{ error }}</div>
+          <div class="text-sm font-medium mb-1">{{ friendlyErrorText }}</div>
+          <details v-if="activeError" class="text-xs opacity-80 break-all max-w-xs">
+            <summary class="cursor-pointer outline-none mb-1">
+              {{ t("search.errorDetails") }}
+            </summary>
+            {{ activeError }}
+          </details>
         </div>
         <SButton
           variant="secondary"
           size="small"
           :loading="states[activeTab].loading"
+          class="mb-3"
           @click="onRetry"
         >
           <template #icon>
@@ -380,6 +460,21 @@ const handlePlayAll = (): void => {
           </template>
           {{ t("common.retry") }}
         </SButton>
+        <div class="text-xs text-on-surface-variant/60 mb-2">
+          {{ t("search.tryOtherPlatform") }}
+        </div>
+        <div class="other-platforms flex items-center gap-2">
+          <SButton
+            v-for="platform in otherPlatforms"
+            :key="platform.key"
+            variant="secondary"
+            size="small"
+            round
+            @click="onPlatformSwitch(platform.key)"
+          >
+            {{ platform.label }}
+          </SButton>
+        </div>
       </div>
     </div>
     <!-- 首次加载 -->
@@ -395,65 +490,107 @@ const handlePlayAll = (): void => {
         <IconLucideSearchX class="size-14 mx-auto mb-4 opacity-30" />
         <div class="text-sm mb-1">{{ t("search.noResults") }}</div>
         <div class="text-xs opacity-70">{{ t("search.noResultsHint") }}</div>
+        <div v-if="isCacheRecovered" class="text-xs opacity-70 mt-2">
+          {{ t("search.cachedResults", { time: cachedAtText }) }}
+        </div>
       </div>
     </div>
     <!-- 各 tab 内容 -->
-    <div v-else class="flex-1 min-h-0">
-      <SongList
-        v-if="activeTab === 'songs'"
-        :items="states.songs.items"
-        :source="pluginSelection ? 'plugin' : status.searchPlatform"
-        :playback-context="playbackContext"
-        show-local-badge
-        :show-size="false"
-        :has-more="states.songs.hasMore"
-        :loading-more="states.songs.loadingMore"
-        @reach-bottom="onReachBottom('songs')"
-      />
-      <CoverList
-        v-else-if="activeTab === 'albums'"
-        :items="states.albums.items"
-        :padding-x="20"
-        :padding-top="8"
-        :padding-bottom="20"
-        :has-more="states.albums.hasMore"
-        :loading-more="states.albums.loadingMore"
-        @click="
-          (item) => navigateToAlbum(item.title, { source: status.searchPlatform, albumId: item.id })
-        "
-        @reach-bottom="onReachBottom('albums')"
-      />
-      <CoverList
-        v-else-if="activeTab === 'artists'"
-        :items="states.artists.items"
-        type="artist"
-        :min-size="120"
-        :padding-x="20"
-        :padding-top="8"
-        :padding-bottom="20"
-        :has-more="states.artists.hasMore"
-        :loading-more="states.artists.loadingMore"
-        @click="
-          (item) =>
-            status.searchPlatform === 'migu'
-              ? undefined
-              : navigateToArtist(item.title, { source: status.searchPlatform, artistId: item.id })
-        "
-        @reach-bottom="onReachBottom('artists')"
-      />
-      <CoverList
-        v-else
-        :items="states.playlists.items"
-        :padding-x="20"
-        :padding-top="8"
-        :padding-bottom="20"
-        :has-more="states.playlists.hasMore"
-        :loading-more="states.playlists.loadingMore"
-        @click="
-          (item) => navigateToPlaylist(item.id, { source: status.searchPlatform, name: item.title })
-        "
-        @reach-bottom="onReachBottom('playlists')"
-      />
+    <div v-else class="flex-1 min-h-0 flex flex-col">
+      <!-- 缓存恢复横幅 -->
+      <div
+        v-if="isCacheRecovered"
+        class="shrink-0 mx-5 mt-2 mb-1 px-4 py-2 flex items-center gap-2 rounded-full bg-on-surface/[0.06] text-xs text-on-surface-variant/80"
+      >
+        <IconLucideHistory class="size-3.5 shrink-0 opacity-70" />
+        <span class="truncate">{{ t("search.cachedResults", { time: cachedAtText }) }}</span>
+      </div>
+      <div class="flex-1 min-h-0">
+        <SongList
+          v-if="activeTab === 'songs'"
+          :items="states.songs.items"
+          :source="pluginSelection ? 'plugin' : status.searchPlatform"
+          :playback-context="playbackContext"
+          show-local-badge
+          :show-size="false"
+          :has-more="states.songs.hasMore"
+          :loading-more="states.songs.loadingMore"
+          @reach-bottom="onReachBottom('songs')"
+        />
+        <CoverList
+          v-else-if="activeTab === 'albums'"
+          :items="states.albums.items"
+          :padding-x="20"
+          :padding-top="8"
+          :padding-bottom="20"
+          :has-more="states.albums.hasMore"
+          :loading-more="states.albums.loadingMore"
+          @click="
+            (item) =>
+              navigateToAlbum(item.title, { source: status.searchPlatform, albumId: item.id })
+          "
+          @reach-bottom="onReachBottom('albums')"
+        />
+        <CoverList
+          v-else-if="activeTab === 'artists'"
+          :items="states.artists.items"
+          type="artist"
+          :min-size="120"
+          :padding-x="20"
+          :padding-top="8"
+          :padding-bottom="20"
+          :has-more="states.artists.hasMore"
+          :loading-more="states.artists.loadingMore"
+          @click="
+            (item) =>
+              status.searchPlatform === 'migu'
+                ? undefined
+                : navigateToArtist(item.title, { source: status.searchPlatform, artistId: item.id })
+          "
+          @reach-bottom="onReachBottom('artists')"
+        />
+        <CoverList
+          v-else
+          :items="states.playlists.items"
+          :padding-x="20"
+          :padding-top="8"
+          :padding-bottom="20"
+          :has-more="states.playlists.hasMore"
+          :loading-more="states.playlists.loadingMore"
+          @click="
+            (item) =>
+              navigateToPlaylist(item.id, { source: status.searchPlatform, name: item.title })
+          "
+          @reach-bottom="onReachBottom('playlists')"
+        />
+      </div>
+      <!-- 追加页失败的内联提示：保留已有结果，仅提示失败并支持重试追加 -->
+      <div
+        v-if="hasInlineError"
+        class="shrink-0 mx-5 mb-3 px-4 py-2 flex items-center gap-3 rounded-lg bg-red-500/10 text-red-500/90"
+      >
+        <IconLucideTriangleAlert class="size-4 shrink-0 opacity-80" />
+        <div class="flex-1 min-w-0 text-xs">
+          <span>{{ friendlyErrorText }}</span>
+          <details v-if="activeError" class="inline-block ml-2 opacity-70">
+            <summary class="cursor-pointer outline-none inline">
+              {{ t("search.errorDetails") }}
+            </summary>
+            <span class="ml-1 break-all">{{ activeError }}</span>
+          </details>
+        </div>
+        <SButton
+          variant="secondary"
+          size="small"
+          :loading="states[activeTab].loadingMore"
+          @click="onRetry"
+        >
+          <template #icon>
+            <IconLucideRotateCw class="size-3.5" />
+          </template>
+          {{ t("common.retry") }}
+        </SButton>
+      </div>
     </div>
   </div>
 </template>

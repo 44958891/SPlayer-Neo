@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   kuwo: vi.fn(),
   error: vi.fn(),
   pluginResolveUrl: vi.fn(),
+  pluginProbeUrl: vi.fn(),
+  pluginsHealth: vi.fn(),
+  pluginsHealthReport: vi.fn(),
   songLevel: "hq" as string,
   songQualitySelection: undefined as string | undefined,
   pluginsList: [] as unknown[],
@@ -36,7 +39,7 @@ vi.mock("@/apis/song/qqmusic", () => ({ resolveQQMusicUrl: mocks.qqmusic }));
 vi.mock("@/apis/song/kugou", () => ({ resolveKugouUrl: mocks.kugou }));
 vi.mock("@/apis/song/kuwo", () => ({ resolveKuwoUrl: mocks.kuwo }));
 vi.mock("@/utils/errors", () => ({ handleError: mocks.error }));
-import { resolveTrackSource } from "./audioSource";
+import { resolveByPluginBest, resolveTrackSource } from "./audioSource";
 
 /** 可用的网易云 musicUrl 插件 */
 const WY_PLUGIN = {
@@ -678,7 +681,7 @@ describe("具体平台音质选择", () => {
     expect(mocks.pluginResolveUrl).not.toHaveBeenCalled();
   });
 
-  it("QQ 臻品母带4.0 跳过官方通道，插件请求携带选择标识", async () => {
+  it("QQ 母带统一目标跳过官方通道，旧 4.0 选择归一为规范 master 标识", async () => {
     mocks.pluginsList = [TX_PLUGIN];
     mocks.pluginResolveUrl.mockResolvedValueOnce({
       url: "https://p/master4.flac",
@@ -692,7 +695,28 @@ describe("具体平台音质选择", () => {
     expect(mocks.pluginResolveUrl.mock.calls[0]?.[0]).toMatchObject({
       source: "tx",
       quality: "jymaster",
-      qualitySelection: "qqmusic:qq-master-4.0",
+      qualitySelection: "qqmusic:master",
+    });
+    expect(res?.provider).toBe("plugin");
+    expect(res?.level).toBe("jymaster");
+    expect(res?.qualitySelection).toBe("qqmusic:master");
+  });
+
+  it("QQ 规范 master 选择同样走插件并原样携带统一标识", async () => {
+    mocks.pluginsList = [TX_PLUGIN];
+    mocks.pluginResolveUrl.mockResolvedValueOnce({
+      url: "https://p/master.flac",
+      quality: "jymaster",
+    });
+    const res = await resolveTrackSource(QQ_TRACK, {
+      silent: true,
+      qualitySelection: "qqmusic:master",
+    });
+    expect(mocks.qqmusic).not.toHaveBeenCalled();
+    expect(mocks.pluginResolveUrl.mock.calls[0]?.[0]).toMatchObject({
+      source: "tx",
+      quality: "jymaster",
+      qualitySelection: "qqmusic:master",
     });
     expect(res?.provider).toBe("plugin");
     expect(res?.level).toBe("jymaster");
@@ -1078,5 +1102,212 @@ describe("显式选择的已知降档防护", () => {
     expect(res?.provider).toBe("plugin");
     expect(res?.level).toBe("jymaster");
     expect(res?.qualityProvenance?.evidence).toBe("plugin");
+  });
+});
+
+describe("音质声明择优", () => {
+  /** 可用 QQ musicUrl 插件工厂 */
+  const txPlugin = (id: string) => ({
+    manifest: { id },
+    enabled: true,
+    status: { state: "ready", sources: { tx: { actions: ["musicUrl"] } } },
+  });
+  /** 可用网易云 musicUrl 插件工厂 */
+  const wyPlugin = (id: string) => ({
+    manifest: { id },
+    enabled: true,
+    status: { state: "ready", sources: { wy: { actions: ["musicUrl"] } } },
+  });
+  const QQ_TRACK: Track = {
+    id: "1",
+    title: "test",
+    source: "qqmusic",
+    artists: [],
+    duration: 1000,
+  };
+  const NETEASE_TRACK: Track = { ...QQ_TRACK, source: "netease" };
+  /** 探针通过回执（42MB，探针实测体积随接受结果带出） */
+  const probeOk = () => ({
+    ok: true,
+    hard: false,
+    message: "",
+    sizeBytes: 42_000_000,
+    timedOut: false,
+  });
+  /** EM 类插件回执：母带原生档 + 版本化回执确认 QQ 平台 */
+  const emMaster = () => ({
+    url: "https://p/em.flac",
+    quality: "jymaster",
+    nativeTier: "master",
+    sourceEvidence: "gzPlayback-v1" as const,
+  });
+  /** 按插件 id 分发取链响应，未匹配即失败，避免测试间串扰 */
+  const dispatchResolve = (byId: Record<string, unknown>): void => {
+    mocks.pluginResolveUrl.mockImplementation(async (args: { pluginId: string }) => {
+      const res = byId[args.pluginId];
+      if (!res) throw new Error(`unexpected plugin: ${args.pluginId}`);
+      return res;
+    });
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.songLevel = "jymaster";
+    mocks.songQualitySelection = undefined;
+    mocks.pluginsList = [];
+    mocks.lookup.mockReset().mockResolvedValue(null);
+    mocks.settings.system.cache.songCache.enabled = false;
+    (window as unknown as { api: unknown }).api = {
+      plugins: {
+        resolveUrl: mocks.pluginResolveUrl,
+        probeUrl: mocks.pluginProbeUrl,
+        health: mocks.pluginsHealth,
+        healthReport: mocks.pluginsHealthReport,
+      },
+      download: { lookup: mocks.lookup },
+    };
+    mocks.pluginsHealth.mockResolvedValue({});
+    mocks.pluginsHealthReport.mockResolvedValue(undefined);
+    mocks.pluginProbeUrl.mockResolvedValue(probeOk());
+  });
+
+  it("显式母带：裸链接请求回执不冒名，确认母带的 EM 按声明择优且元数据完整", async () => {
+    // 注册顺序 IKUN 在前：同档位（jymaster）稳定排序本应由 IKUN 胜出，
+    // 但其回执只有请求回显（无 nativeTier），显式声明目标下必须让位于真实确认的 EM
+    mocks.pluginsList = [txPlugin("ikun"), txPlugin("em")];
+    dispatchResolve({ ikun: { url: "https://p/ikun.flac", quality: "jymaster" }, em: emMaster() });
+    const res = await resolveByPluginBest(QQ_TRACK, "jymaster", [], true, "qqmusic:master");
+    expect(res).toEqual({
+      ok: true,
+      url: "https://p/em.flac",
+      isTrial: false,
+      provider: "plugin",
+      pluginId: "em",
+      level: "jymaster",
+      qualityProvenance: {
+        provider: "plugin",
+        evidence: "plugin",
+        platform: "qqmusic",
+        pluginId: "em",
+        sourceKey: "tx",
+        platformEvidence: "source",
+        nativeTier: "master",
+        level: "jymaster",
+      },
+      sizeBytes: 42_000_000,
+    });
+    // 探针通过后回写体检表，后续扫描不再重复无效请求
+    expect(mocks.pluginsHealthReport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: expect.stringContaining("em#"),
+        entry: expect.objectContaining({ ok: true }),
+      }),
+    );
+  });
+
+  it("全景声 2.0：同档位普通 atmos 回执不冒名，atmos_plus 声明达标者胜出", async () => {
+    // 两候选均以版本化回执确认 QQ 平台，仅品牌原生档不同：普通 atmos 不能冒充 2.0
+    mocks.pluginsList = [txPlugin("tx-a"), txPlugin("tx-b")];
+    dispatchResolve({
+      "tx-a": {
+        url: "https://p/atmos.flac",
+        quality: "sky",
+        nativeTier: "atmos",
+        sourceEvidence: "gzPlayback-v1",
+      },
+      "tx-b": {
+        url: "https://p/atmos_plus.flac",
+        quality: "sky",
+        nativeTier: "atmos_plus",
+        sourceEvidence: "gzPlayback-v1",
+      },
+    });
+    const res = await resolveTrackSource(QQ_TRACK, {
+      silent: true,
+      qualitySelection: "qqmusic:qq-spatial-2.0",
+    });
+    expect(res?.pluginId).toBe("tx-b");
+    expect(res?.level).toBe("sky");
+    expect(res?.qualitySelection).toBe("qqmusic:qq-spatial-2.0");
+    expect(res?.qualityProvenance).toEqual({
+      provider: "plugin",
+      evidence: "plugin",
+      platform: "qqmusic",
+      pluginId: "tx-b",
+      sourceKey: "tx",
+      platformEvidence: "source",
+      nativeTier: "atmos_plus",
+      level: "sky",
+    });
+  });
+
+  it("显式母带：跨平台显式回执（actualSource kuwo）不冒名，QQ 来源声明者胜出", async () => {
+    mocks.pluginsList = [txPlugin("tx-kw"), txPlugin("tx-qq")];
+    dispatchResolve({
+      "tx-kw": {
+        url: "https://p/kw.flac",
+        quality: "jymaster",
+        nativeTier: "master",
+        actualSource: "kw",
+      },
+      "tx-qq": emMaster(),
+    });
+    const res = await resolveTrackSource(QQ_TRACK, {
+      silent: true,
+      qualitySelection: "qqmusic:master",
+    });
+    expect(res?.pluginId).toBe("tx-qq");
+    expect(res?.source).toBe("https://p/em.flac");
+    expect(res?.level).toBe("jymaster");
+    expect(res?.qualityProvenance).toEqual({
+      provider: "plugin",
+      evidence: "plugin",
+      platform: "qqmusic",
+      pluginId: "tx-qq",
+      sourceKey: "tx",
+      platformEvidence: "source",
+      nativeTier: "master",
+      level: "jymaster",
+    });
+  });
+
+  it("通用目标不按声明择优：同档位保持注册顺序，探针通过即取首者", async () => {
+    mocks.songLevel = "hq";
+    mocks.pluginsList = [wyPlugin("wy-a"), wyPlugin("wy-b")];
+    dispatchResolve({
+      "wy-a": { url: "https://p/a.flac", quality: "hq" },
+      "wy-b": { url: "https://p/b.flac", quality: "hq", nativeTier: "320k" },
+    });
+    const res = await resolveByPluginBest(NETEASE_TRACK, "hq", [], true);
+    expect(res).toEqual({
+      ok: true,
+      url: "https://p/a.flac",
+      isTrial: false,
+      provider: "plugin",
+      pluginId: "wy-a",
+      level: "hq",
+      qualityProvenance: {
+        provider: "plugin",
+        evidence: "request",
+        pluginId: "wy-a",
+        sourceKey: "wy",
+        level: "hq",
+      },
+      sizeBytes: 42_000_000,
+    });
+  });
+
+  it("显式母带无任何声明达标者时保留兜底：同档位按注册顺序取首者", async () => {
+    mocks.pluginsList = [txPlugin("tx-a"), txPlugin("tx-b")];
+    dispatchResolve({
+      "tx-a": { url: "https://p/a.flac", quality: "jymaster" },
+      "tx-b": { url: "https://p/b.flac", quality: "jymaster" },
+    });
+    const res = await resolveTrackSource(QQ_TRACK, {
+      silent: true,
+      qualitySelection: "qqmusic:master",
+    });
+    expect(res?.pluginId).toBe("tx-a");
+    expect(res?.level).toBe("jymaster");
   });
 });

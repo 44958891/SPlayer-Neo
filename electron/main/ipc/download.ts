@@ -25,8 +25,8 @@ export const registerDownloadIpc = (): void => {
   ipcMain.handle("download:resolution", (_evt, taskId: string, res: DownloadResolution) =>
     downloadManager.submitResolution(taskId, res),
   );
-  ipcMain.handle("download:resolveFailed", (_evt, taskId: string) =>
-    downloadManager.failResolution(taskId),
+  ipcMain.handle("download:resolveFailed", (_evt, taskId: string, errorCode?: string) =>
+    downloadManager.failResolution(taskId, errorCode),
   );
   ipcMain.handle("download:cancel", (_evt, taskId: string) => downloadManager.cancel(taskId));
   ipcMain.handle("download:remove", (_evt, taskId: string) => downloadManager.remove(taskId));

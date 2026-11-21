@@ -20,7 +20,7 @@ import { store } from "@main/store";
 import { buildCacheKey, cacheClear, cacheGet, cacheSet } from "./core/cache";
 import { cookieToJson } from "./core/cookie";
 import { getAnonymousToken, getDeviceId, setAnonymousToken, setDeviceId } from "./core/device";
-import { createRequest } from "./core/request";
+import { createRequest, NeteaseRequestError } from "./core/request";
 import { resetXeapiKey } from "./core/xeapi";
 import { modules } from "./modules";
 import { neteaseLog } from "@main/utils/logger";
@@ -111,6 +111,8 @@ const sessionRealIp = (): string => {
 /** 内存缓存 */
 let sessionCache: Record<string, string> | null = null;
 let anonymousSessionPromise: Promise<void> | null = null;
+/** 会话代次：clear/set/merge 递增，重试窗内的过期游客注册据此放弃 */
+let anonymousGeneration = 0;
 
 const syncDeviceState = (session: Record<string, string>): void => {
   if (session.deviceId) setDeviceId(session.deviceId);
@@ -141,11 +143,13 @@ export const getNeteaseCookies = (): Record<string, string> => ({ ...loadSession
 
 export const setNeteaseCookies = (cookies: Record<string, string>): void => {
   persistSession(cookies);
+  anonymousGeneration += 1;
   cacheClear();
 };
 
 export const mergeNeteaseCookies = (patch: Record<string, string>): void => {
   persistSession({ ...loadSession(), ...patch });
+  anonymousGeneration += 1;
   cacheClear();
 };
 
@@ -153,6 +157,7 @@ export const clearNeteaseCookies = (): void => {
   sessionCache = {};
   setAnonymousToken("");
   resetXeapiKey();
+  anonymousGeneration += 1;
   clearSessionCookies("netease");
   cacheClear();
 };
@@ -171,32 +176,99 @@ const parseSetCookie = (arr: string[]): Record<string, string> => {
   return out;
 };
 
-/** 确保未登录时已有稳定的 MUSIC_A 与 deviceId */
+/** 匿名注册单飞内最多尝试次数（含首次） */
+const ANON_REGISTER_MAX_ATTEMPTS = 3;
+
+/** 匿名注册重试基础退避（毫秒），第 n 次重试等待 n * 该值 */
+const ANON_REGISTER_BACKOFF_MS = 300;
+
+/**
+ * 提取注册结果中的匿名 token 与 set-cookie 补丁
+ * @param result - register_anonimous 响应
+ * @returns token 与补丁，token 为空串表示未取得（来源 body.token 或 set-cookie MUSIC_A）
+ */
+const extractAnonymousToken = (result: {
+  body: unknown;
+  cookie?: string[];
+}): { token: string; patch: Record<string, string> } => {
+  const body = result.body as { token?: unknown };
+  const patch = parseSetCookie(result.cookie ?? []);
+  const token = typeof body.token === "string" && body.token ? body.token : patch.MUSIC_A;
+  return { token: typeof token === "string" && token ? token : "", patch };
+};
+
+/** 判断匿名注册抛错是否可重试：仅请求层重试耗尽后的网络 502 */
+const isRetryableRegisterError = (err: unknown): boolean =>
+  err instanceof NeteaseRequestError && err.response.status === 502;
+
+/**
+ * 单次匿名注册尝试
+ * @returns 业务 code、set-cookie 补丁与 token，token 为空串表示本轮未取得
+ */
+const attemptAnonymousRegister = async (): Promise<{
+  code: number;
+  patch: Record<string, string>;
+  token: string;
+}> => {
+  const session = loadSession();
+  const result = await modules.register_anonimous({ cookie: { ...session } }, createRequest);
+  const body = result.body as { code?: unknown };
+  return { code: Number(body.code), ...extractAnonymousToken(result) };
+};
+
+/** 确保未登录时已有稳定的 MUSIC_A 与 deviceId；临时无 token 在单飞内有限重试，会话代次变更即放弃 */
 export const ensureNeteaseAnonymousSession = async (): Promise<void> => {
   const sessionState = loadSession();
   if (sessionState.MUSIC_U || sessionState.MUSIC_A || getAnonymousToken()) return;
   if (anonymousSessionPromise) return anonymousSessionPromise;
 
-  anonymousSessionPromise = (async () => {
-    const session = loadSession();
-    const result = await modules.register_anonimous({ cookie: { ...session } }, createRequest);
-    const body = result.body as { token?: unknown };
-    const patch = parseSetCookie(result.cookie ?? []);
-    const token = typeof body.token === "string" ? body.token : patch.MUSIC_A;
-    if (!token) throw new Error("netease anonymous registration missing MUSIC_A");
-    persistSession({
-      ...loadSession(),
-      ...patch,
-      MUSIC_A: token,
-      deviceId: getDeviceId(),
-    });
-    cacheClear();
-    neteaseLog.info("游客会话初始化成功");
-  })().finally(() => {
-    anonymousSessionPromise = null;
+  const registration = (async () => {
+    const generation = anonymousGeneration;
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= ANON_REGISTER_MAX_ATTEMPTS; attempt++) {
+      if (attempt > 1) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, (attempt - 1) * ANON_REGISTER_BACKOFF_MS),
+        );
+      }
+      // 每轮前：已登录或会话被外部变更，放弃过期注册，由后续请求重新 ensure
+      if (loadSession().MUSIC_U || anonymousGeneration !== generation) return;
+      try {
+        const { code, token, patch } = await attemptAnonymousRegister();
+        if (!token) {
+          // 仅 200/400 视为临时无 token，其余业务码立即失败
+          if (code !== 200 && code !== 400) {
+            throw new Error(`netease anonymous registration missing MUSIC_A (code ${code})`);
+          }
+          lastError = new Error("netease anonymous registration missing MUSIC_A");
+          continue;
+        }
+        // 落库前双检：已登录或代次变更即放弃，不回写过期结果
+        if (loadSession().MUSIC_U || anonymousGeneration !== generation) return;
+        persistSession({
+          ...loadSession(),
+          ...patch,
+          MUSIC_A: token,
+          deviceId: getDeviceId(),
+        });
+        cacheClear();
+        neteaseLog.info("游客会话初始化成功");
+        return;
+      } catch (err) {
+        if (!isRetryableRegisterError(err)) throw err;
+        lastError = err;
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("netease anonymous registration missing MUSIC_A");
+  })();
+  const promise = registration.finally(() => {
+    // 仅清理仍归属本单飞的 promise，过期收尾不清掉新一轮注册
+    if (anonymousSessionPromise === promise) anonymousSessionPromise = null;
   });
-
-  return anonymousSessionPromise;
+  anonymousSessionPromise = promise;
+  return promise;
 };
 
 /**

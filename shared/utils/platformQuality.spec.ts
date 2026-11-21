@@ -75,27 +75,23 @@ describe("平台音质选项与默认目标", () => {
     expect(resolvePlatformQuality("netease", "sky", "qqmusic:qq-spatial")?.id).toBe("netease:sky");
   });
 
-  it("QQ 母带仅保留 4.0，旧 2.0 选择仅兼容映射不进入请求候选", () => {
-    const master = findPlatformQuality("qqmusic:qq-master-4.0")!;
+  it("QQ 母带统一为 master，历史版本选择及声明兼容同一目标", () => {
+    const master = findPlatformQuality("qqmusic:master")!;
+    expect(master.id).toBe("qqmusic:master");
+    expect(master.nativeTier).toBe("master");
     expect(master.level).toBe("jymaster");
     expect(master.official).toBe(false);
     expect(master.requiresDeclaration).toBe(true);
     expect(master.minimumLevel).toBe("jymaster");
-    // 候选不含旧 2.0/generic qq-master 回执串，历史回执不能点亮 4.0 声明
-    expect(master.lxCandidates).not.toContain("qq-master-2.0");
-    expect(master.lxCandidates).not.toContain("臻品母带2.0");
-    expect(master.lxCandidates).not.toContain("qq-master");
-    expect(declaredQualitySupports(master, ["qq-master-2.0", "臻品母带2.0", "qq-master"])).toBe(
-      false,
-    );
-    // 精确 4.0 与通用母带候选可供旧脚本母带通道
-    expect(declaredQualitySupports(master, ["QQ-Master-4.0", "master", "jymaster"])).toBe(true);
-    expect(declaredQualitySupports(master, ["臻品母带4.0"])).toBe(true);
+    expect(master.lxCandidates[0]).toBe("master");
+    for (const alias of master.lxCandidates) {
+      expect(declaredQualitySupports(master, [alias]), alias).toBe(true);
+      expect(findPlatformQuality(`qqmusic:${alias}`), alias).toBe(master);
+      expect(normalizeStoredQualitySelection(`qqmusic:${alias}`), alias).toBe(master.id);
+      expect(findPlatformQuality(`qqmusic:${alias}`, "netease"), alias).toBeUndefined();
+    }
+    expect(declaredQualitySupports(master, ["flac", "hires"])).toBe(false);
     expect(declaredQualitySupports(master, undefined)).toBe(false);
-    // 旧 2.0 标识映射到同一 4.0 菜单对象，且限制在 QQ 平台内
-    const legacy = findPlatformQuality("qqmusic:qq-master-2.0");
-    expect(legacy).toBe(master);
-    expect(findPlatformQuality("qqmusic:qq-master-2.0", "netease")).toBeUndefined();
   });
 
   it("统一偏好跨平台映射名称，但文件自己的来源不参与修改", () => {
@@ -130,7 +126,8 @@ describe("平台音质选项与默认目标", () => {
   });
 
   it("存档选择规范化：旧别名升级规范档，退休标识保留，未知清除", () => {
-    expect(normalizeStoredQualitySelection("qqmusic:qq-master-2.0")).toBe("qqmusic:qq-master-4.0");
+    expect(normalizeStoredQualitySelection("qqmusic:qq-master-2.0")).toBe("qqmusic:master");
+    expect(normalizeStoredQualitySelection("qqmusic:qq-master-4.0")).toBe("qqmusic:master");
     expect(normalizeStoredQualitySelection("migu:migu-premium")).toBe("migu:hires");
     // 退休标识保留原值：由源入口显式报错，不清空后隐式按 sky 请求
     expect(normalizeStoredQualitySelection("qqmusic:qq-premium-2.0")).toBe(
@@ -143,7 +140,7 @@ describe("平台音质选项与默认目标", () => {
     expect(normalizeStoredQualitySelection("migu:migu-spatial")).toBe("migu:migu-spatial");
     expect(normalizeStoredQualitySelection("netease:sky")).toBe("netease:sky");
     expect(normalizeStoredQualitySelection("qqmusic:qq-spatial")).toBe("qqmusic:qq-spatial");
-    expect(normalizeStoredQualitySelection("qqmusic:master")).toBeUndefined();
+    expect(normalizeStoredQualitySelection("qqmusic:master")).toBe("qqmusic:master");
     expect(normalizeStoredQualitySelection(undefined)).toBeUndefined();
   });
 
@@ -171,7 +168,7 @@ describe("平台音质选项与默认目标", () => {
       }
       if (platform === "qqmusic" && level === "jymaster") {
         expect(item?.minimumLevel).toBe("jymaster");
-        expect(item?.id).toBe("qqmusic:qq-master-4.0");
+        expect(item?.id).toBe("qqmusic:master");
       }
       if (platform === "migu" && level === "hi-res") expect(item?.id).toBe("migu:hires");
     }
@@ -193,7 +190,7 @@ describe("平台音质选项与默认目标", () => {
 
   it("非法或其他平台选择不从原型对象或模糊前缀匹配", () => {
     expect(findPlatformQuality("__proto__:master")).toBeUndefined();
-    expect(findPlatformQuality("qqmusic:master")).toBeUndefined();
+    expect(findPlatformQuality("qqmusic:master-unknown")).toBeUndefined();
     expect(resolvePlatformQuality("qqmusic", "hq", "bad:value")?.family).toBe("hq");
   });
 });

@@ -150,8 +150,8 @@ export interface DownloadApi {
   resetDir: () => Promise<string>;
   /** 回传即时解析结果（主进程 download:resolve 的应答） */
   submitResolution: (taskId: string, res: DownloadResolution) => Promise<void>;
-  /** 上报即时解析失败，任务标记为 failed */
-  failResolution: (taskId: string) => Promise<void>;
+  /** 上报即时解析失败，任务标记为 failed 并落库原因码（未知码按 UNKNOWN 兜底） */
+  failResolution: (taskId: string, errorCode?: string) => Promise<void>;
   onProgress: (callback: (data: DownloadProgress) => void) => () => void;
   onState: (callback: (task: DownloadTask) => void) => () => void;
   onResolve: (callback: (payload: DownloadResolvePayload) => void) => () => void;
