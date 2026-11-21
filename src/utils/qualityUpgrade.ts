@@ -9,6 +9,9 @@
  *   标题一致 + 部分包含 > 去括号一致 + 部分包含，同分按时长差排序取最优
  */
 import type { Track } from "@shared/types/player";
+import type { Platform } from "@shared/types/platform";
+import { ALL_PLATFORMS } from "@shared/types/platform";
+import { validateQualityProvenance } from "@shared/utils/qualityProvenance";
 
 /** 标点归一：去掉除字母/数字/汉字外的一切，转小写 */
 export const normalizeBase = (value: string): string =>
@@ -134,6 +137,21 @@ export const pathDirName = (filePath: string): string => {
   if (idx <= 0) return filePath;
   const dir = filePath.slice(0, idx);
   return /^[A-Za-z]:$/.test(dir) ? `${dir}\\` : dir;
+};
+
+/**
+ * 升级候选平台的稳定优先序：本地文件的来源平台（有可靠解析依据时）最优先，
+ * 其余平台按固定平台表排序；同分候选据此取稳定结果，而非按请求返回先后
+ * @param local - 本地曲目
+ * @param active - 本次扫描启用的平台
+ * @returns 过滤并排序后的平台列表
+ */
+export const orderUpgradePlatforms = (local: Track, active: readonly Platform[]): Platform[] => {
+  const preferred = validateQualityProvenance(local.qualityProvenance)?.platform;
+  const ordered = preferred
+    ? [preferred, ...ALL_PLATFORMS.filter((p) => p !== preferred)]
+    : ALL_PLATFORMS;
+  return ordered.filter((p) => active.includes(p));
 };
 
 /** 取小写扩展名（含点；无扩展名返回整串，调用方仅对含扩展名的路径使用） */

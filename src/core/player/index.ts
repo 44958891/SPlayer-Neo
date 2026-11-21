@@ -1,7 +1,16 @@
-import type { IpcResponse, LoadResult, PlaybackContext, Track } from "@shared/types/player";
+import type {
+  IpcResponse,
+  LoadResult,
+  PlaybackContext,
+  Track,
+  TrackDetail,
+} from "@shared/types/player";
 import { TRANSITION_LOOKAHEAD_MS } from "@shared/constants/playback";
+import type { PlaybackQualityStatus } from "@shared/types/playbackQuality";
 import type { TagEditRequest, TagWriteOutcome } from "@shared/types/tagEditor";
 import type { PersonalFmOptions } from "@/types/netease";
+import { assessPlaybackQuality } from "@shared/utils/playbackQuality";
+import { findPlatformQuality } from "@shared/utils/platformQuality";
 import { handleEvent } from "./events";
 import type { RepeatMode, ShuffleMode } from "@/stores/status";
 import { useMediaStore } from "@/stores/media";
@@ -38,8 +47,10 @@ import { extractColorFromUrl } from "@/utils/color";
 import { handleError, isSkippableError } from "@/utils/errors";
 import { ErrorCode } from "@shared/types/errors";
 import { shouldSkipKeywordTrack } from "@/utils/preset/skipKeywords";
+import { QUALITY_LABELS } from "@/utils/quality";
 import { toast } from "@/composables/useToast";
 import i18n from "@/i18n";
+import type { QualityProvenance } from "@shared/types/quality";
 
 /** 加载运行时选项 */
 interface LoadRuntimeOptions {
@@ -51,12 +62,18 @@ interface LoadRuntimeOptions {
   context?: PlaybackContext;
   /** 原生交叉过渡已经完成时直接应用其元数据 */
   transitionResult?: IpcResponse<LoadResult>;
+  /** 仅本次取链确认的来源，不能复用上次播放的声明 */
+  qualityProvenance?: QualityProvenance;
+  /** 本次请求的具体平台音质选择标识，随 IPC 下发供主进程对照校验 */
+  qualitySelection?: string;
 }
 
 /** 单次音源兜底过程的重试状态 */
 interface SourceRetryState {
   /** 已下载文件加载失败后不再重复命中 */
   skipDownloaded: boolean;
+  /** 显式切换音质时跳过已有歌曲缓存 */
+  skipCache: boolean;
   /** 是否已放弃官方在线接口，后续仅尝试插件 */
   skipOfficialOnline: boolean;
   /** 已尝试且需跳过的插件 ID */
@@ -68,9 +85,15 @@ interface SourceRetryState {
  * - loaded: 已拿到解析结果，并完成一次 load（成功或失败都算）
  * - unresolved: 当前重试策略下没有可用音源
  * - cancelled: 加载期间被新的切歌/重载请求接管
+ * loaded 附带 qualityShortfall 表示交付可播但未达到显式选择的档位目标
  */
 type LoadSourceResult =
-  | { status: "loaded"; result: LoadOutcome; resolved: ResolvedTrackSource }
+  | {
+      status: "loaded";
+      result: LoadOutcome;
+      resolved: ResolvedTrackSource;
+      qualityShortfall?: PlaybackQualityStatus;
+    }
   | { status: "unresolved"; error?: string }
   | { status: "cancelled" };
 
@@ -86,6 +109,8 @@ let consecutiveFailures = 0;
 const MAX_CONSECUTIVE_FAILURES = 5;
 /** 失败后跳下一首的节流延迟（毫秒） */
 const SKIP_ON_ERROR_DELAY_MS = 1000;
+/** 参与播放档位校验的在线提供者；下载 / 本地 / 流媒体保持无硬性要求 */
+const QUALITY_ASSESSABLE_PROVIDERS: ReadonlySet<string> = new Set(["official", "plugin", "cache"]);
 
 /**
  * 单曲级失败兜底
@@ -118,7 +143,16 @@ const skipOnFailure = async (
 };
 
 /** load() 的结果；失败时附带错误码，跳曲决策交给调用方 */
-export type LoadOutcome = { ok: true; track: Track | null } | { ok: false; error?: string };
+export type LoadOutcome =
+  | {
+      ok: true;
+      track: Track | null;
+      /** 主进程回传的请求与实际档位对照结论；未校验时缺省 */
+      qualityStatus?: PlaybackQualityStatus;
+      /** 本次加载详情，供换源循环用解码参数复验档位 */
+      detail?: TrackDetail;
+    }
+  | { ok: false; error?: string };
 
 /**
  * 切歌通用前置
@@ -180,6 +214,8 @@ export const load = async (
         meta,
         context: options.context,
         preparedId: options.preparedId,
+        qualityProvenance: options.qualityProvenance,
+        qualitySelection: options.qualitySelection,
       }));
     // 竞态保护
     if (token !== loadToken) return { ok: false };
@@ -211,7 +247,12 @@ export const load = async (
         status.position = playback.getCurrentTime();
         media.updateLyricIndex(status.position + status.lyricOffsetMs);
       }
-      return { ok: true, track: enriched };
+      return {
+        ok: true,
+        track: enriched,
+        qualityStatus: detail?.playbackQuality,
+        detail,
+      };
     }
     status.state = "idle";
     lyricLoader.loadForTrack(null);
@@ -225,6 +266,7 @@ export const load = async (
 /** 创建音源重试状态 */
 const createSourceRetryState = (): SourceRetryState => ({
   skipDownloaded: false,
+  skipCache: false,
   skipOfficialOnline: false,
   skippedPluginIds: new Set<string>(),
 });
@@ -243,6 +285,7 @@ const resolveTrackSourceWithRetry = (
     silent: true,
     onError,
     skipDownloaded: retry.skipDownloaded,
+    skipCache: retry.skipCache,
     skipOfficialOnline: retry.skipOfficialOnline,
     skipPluginIds: [...retry.skippedPluginIds],
   });
@@ -272,6 +315,70 @@ const markRetryableSourceFailure = (
   return false;
 };
 
+/** 同一曲同一降档结论只提示一次的键 */
+let lastQualityWarnKey: string | null = null;
+
+/**
+ * 取请求音质目标的展示文案
+ * @param selectionId - 具体平台音质选择标识
+ * @returns 选项菜单文案，未知选择回退为通用档位短码
+ */
+const requestedQualityLabel = (selectionId: string): string => {
+  const option = findPlatformQuality(selectionId);
+  if (!option) return selectionId;
+  const { t, te } = i18n.global;
+  return te(option.labelKey) ? t(option.labelKey) : QUALITY_LABELS[option.level];
+};
+
+/**
+ * 正常播放拿到明确降档 / 未确认来源时提示一次
+ * 属于可播兜底而非错误，不打断播放，也不触发跳曲
+ * @param track - 当前曲目
+ * @param status - 请求与实际交付的对照结论
+ */
+const warnQualityShortfall = (track: Track, status: PlaybackQualityStatus): void => {
+  const media = useMediaStore();
+  // 主进程未随详情下发结论（本地复验路径）时补写，保证界面能看到降档标注
+  if (!media.detail?.playbackQuality) media.setPlaybackQuality(status);
+  const key = `${track.id}:${status.selection}:${status.state}`;
+  if (lastQualityWarnKey === key) return;
+  lastQualityWarnKey = key;
+  const { t } = i18n.global;
+  const params = {
+    requested: requestedQualityLabel(status.selection),
+    actual: status.actualLevel ? QUALITY_LABELS[status.actualLevel] : "—",
+  };
+  const message =
+    status.state === "below"
+      ? t("quality.playback.below", params)
+      : t("quality.playback.unconfirmed", params);
+  toast.warning(message);
+};
+
+/**
+ * 取本次加载的请求与实际交付对照结论
+ * 主进程随 LoadResult 下发结论时直接采用；缺失时按解析来源与解码参数本地复验
+ * @param resolved - 本次加载使用的音源
+ * @param outcome - 已成功的加载结果
+ * @returns 对照结论；无具体选择、提供者不参与校验或缺解码依据时返回 undefined
+ */
+const assessLoadedQuality = (
+  resolved: ResolvedTrackSource,
+  outcome: { qualityStatus?: PlaybackQualityStatus; detail?: TrackDetail },
+): PlaybackQualityStatus | undefined => {
+  const selectionId = resolved.qualitySelection;
+  if (!selectionId || !QUALITY_ASSESSABLE_PROVIDERS.has(resolved.provider)) return undefined;
+  if (outcome.qualityStatus) return outcome.qualityStatus;
+  const selection = findPlatformQuality(selectionId);
+  if (!selection || !outcome.detail?.quality) return undefined;
+  return assessPlaybackQuality({
+    selection: selection.id,
+    source: resolved.provider,
+    quality: outcome.detail.quality,
+    provenance: resolved.qualityProvenance,
+  });
+};
+
 /**
  * 解析并加载 Track，遇到可兜底的音源失败时继续尝试下一个来源
  * @param track - 要加载的 Track
@@ -281,6 +388,7 @@ const markRetryableSourceFailure = (
  * @param retryOnAnyFailure - 是否对任意加载失败继续换源
  * @param initialResolved - 已解析的预载音源，首次尝试时优先使用
  * @param preparedId - 与首次尝试音源对应的原生预载槽位标识
+ * @param forceNewQuality - 显式选择音质时重新取链，跳过已下载文件和缓存
  * @returns 本轮加载结果，包含取消、无法解析或已完成加载的状态
  */
 const loadTrackSourceWithFallback = async (
@@ -291,10 +399,38 @@ const loadTrackSourceWithFallback = async (
   retryOnAnyFailure = false,
   initialResolved?: ResolvedTrackSource | null,
   preparedId?: string,
+  forceNewQuality = false,
 ): Promise<LoadSourceResult> => {
   const retry = createSourceRetryState();
+  retry.skipDownloaded = forceNewQuality;
+  retry.skipCache = forceNewQuality;
   let firstTry = initialResolved ?? null;
   let lastFailure: Extract<LoadSourceResult, { status: "loaded" }> | undefined;
+  /** 加载成功但未达显式选择档位的最近一次结果；换源耗尽时作为可播兜底返回 */
+  let lastPlayableShortfall: Extract<LoadSourceResult, { status: "loaded" }> | undefined;
+  /** 兜底结果之后是否还有过失败的加载；返回前需要重载才能恢复引擎状态 */
+  let shortfallNeedsReload = false;
+
+  /**
+   * 换源耗尽后落定可播降档兜底；期间引擎已被后续失败加载重置时先重载该音源
+   * @param entry - 待返回的降档兜底结果
+   * @returns 重载后的兜底结果；恢复失败时按失败结果返回
+   */
+  const finalizeShortfall = async (
+    entry: Extract<LoadSourceResult, { status: "loaded" }>,
+  ): Promise<LoadSourceResult> => {
+    if (!shortfallNeedsReload) return entry;
+    const restored = await load(entry.resolved.source, autoPlay, track, {
+      suppressErrorToast: true,
+      qualityProvenance: entry.resolved.qualityProvenance,
+      qualitySelection: entry.resolved.qualitySelection,
+      context,
+    });
+    if (!shouldContinue()) return { status: "cancelled" };
+    if (!restored.ok) return { status: "loaded", result: restored, resolved: entry.resolved };
+    return { ...entry, result: restored };
+  };
+
   /**
    * 硬上限：防止「解析器反复给出同一个源」时死循环。
    * 正常情况下每个 provider 只会被 markRetryableSourceFailure 消费一次，
@@ -312,15 +448,48 @@ const loadTrackSourceWithFallback = async (
       }));
     firstTry = null;
     if (!shouldContinue()) return { status: "cancelled" };
-    // 没有可用插件不代表原音源失败原因，优先保留实际加载错误
-    if (!resolved) return lastFailure ?? { status: "unresolved", error: resolutionError };
+    // 没有可用插件不代表原音源失败原因，可播降档结果与实际加载错误优先于无音源
+    if (!resolved) {
+      if (lastPlayableShortfall) return await finalizeShortfall(lastPlayableShortfall);
+      return lastFailure ?? { status: "unresolved", error: resolutionError };
+    }
     const result = await load(resolved.source, autoPlay, track, {
       preparedId: usingInitial ? preparedId : undefined,
       suppressErrorToast: true,
+      qualityProvenance: resolved.qualityProvenance,
+      qualitySelection: resolved.qualitySelection,
       context,
     });
     if (!shouldContinue()) return { status: "cancelled" };
-    if (!result.ok) lastFailure = { status: "loaded", result, resolved };
+    if (!result.ok) {
+      lastFailure = { status: "loaded", result, resolved };
+      shortfallNeedsReload = true;
+    }
+    // 显式选择的档位校验：未达标或未确认时先换下一个来源，耗尽后如实带结论返回
+    if (result.ok) {
+      const qualityStatus = assessLoadedQuality(resolved, result);
+      if (qualityStatus && qualityStatus.state !== "met") {
+        const shortfall: LoadSourceResult = {
+          status: "loaded",
+          result,
+          resolved,
+          qualityShortfall: qualityStatus,
+        };
+        if (resolved.provider === "cache" && !retry.skipCache) {
+          // 缓存内容与请求档位不符：作废本次缓存读取，重新解析新鲜音源
+          retry.skipCache = true;
+          lastPlayableShortfall = shortfall;
+          shortfallNeedsReload = false;
+          continue;
+        }
+        if (markRetryableSourceFailure(resolved, retry)) {
+          lastPlayableShortfall = shortfall;
+          shortfallNeedsReload = false;
+          continue;
+        }
+        return shortfall;
+      }
+    }
     // 预载 URL 可能已经过期，非本地来源失败后重新解析一次最新地址
     if (
       usingInitial &&
@@ -358,7 +527,8 @@ const loadTrackSourceWithFallback = async (
     if (canRetry) continue;
     return { status: "loaded", result, resolved };
   }
-  // 达到尝试上限：返回最后一次失败（若有），否则视为无法解析
+  // 达到尝试上限：可播降档兜底（必要时重载恢复引擎状态）与最后一次失败优先
+  if (lastPlayableShortfall) return await finalizeShortfall(lastPlayableShortfall);
   return lastFailure ?? { status: "unresolved" };
 };
 
@@ -391,7 +561,7 @@ const loadTrack = async (
   const preloaded = transitionResult ? null : consumePreloadedTrack(track);
   // 乐观更新
   const media = useMediaStore();
-  media.setTrack(track);
+  media.setTrack(track, null);
   media.setPlaybackContext(context);
   lyricLoader.beginLoad();
   resetForLoad(track.duration ?? 0, transitionResult?.data?.playback);
@@ -407,6 +577,8 @@ const loadTrack = async (
             result: await load(transitionSource.source, true, track, {
               context,
               transitionResult,
+              qualityProvenance: transitionSource.qualityProvenance,
+              qualitySelection: transitionSource.qualitySelection,
             }),
             resolved: transitionSource,
           }
@@ -436,7 +608,10 @@ const loadTrack = async (
       } else if (result.ok) {
         // 用户主动触发的成功播放记入历史；initPlayer 的恢复路径走 load() 不经此处
         void useHistoryStore().record(track);
-        if (resolved.cacheRequest) {
+        if (loaded.qualityShortfall) {
+          // 明确降档 / 未确认的可播兜底：如实提示一次，不按请求档位写入缓存
+          warnQualityShortfall(track, loaded.qualityShortfall);
+        } else if (resolved.cacheRequest) {
           cacheScheduler.schedule(track.id, resolved.cacheRequest);
         }
         scheduleNextTrackPreload();
@@ -456,18 +631,57 @@ const loadTrack = async (
 };
 
 /**
+ * 显式音质切换失败后回载先前已接受的音源
+ * 只对已知地址做一次有界恢复，不重新解析网络来源；失败则保持停止并已提示
+ * @param track - 当前曲目
+ * @param previousSource - 切换前正在使用的音源地址
+ * @param resumePosition - 切换时的播放位置（毫秒）
+ * @param shouldPlay - 先前是否处于播放状态
+ * @param provenance - 先前已经接受的实际音源依据
+ * @param selection - 当前未满足的请求目标，仍保留用于差异提示
+ * @returns 是否恢复成功
+ */
+const restorePreviousSource = async (
+  track: Track,
+  previousSource: string,
+  resumePosition: number,
+  shouldPlay: boolean,
+  provenance: QualityProvenance | undefined,
+  selection: string | undefined,
+): Promise<boolean> => {
+  const restored = await load(previousSource, false, track, {
+    suppressErrorToast: true,
+    qualityProvenance: provenance,
+    qualitySelection: selection,
+  });
+  if (!restored.ok) return false;
+  if (resumePosition > 0) await seek(resumePosition);
+  if (shouldPlay) await play();
+  scheduleNextTrackPreload();
+  return true;
+};
+
+/**
  * 热替换当前播放
  * 切换在线音质、或在线 URL 过期时调用：重新解析 URL 并从当前进度续播
  * @param forcePlay - 重载后强制播放
+ * @param forceNewQuality - 显式切换音质时忽略旧下载和缓存
  * @returns 是否完成（成功或被更新的加载接管）；解析/加载失败返回 false，调用方据此决定是否跳曲
  */
-export const reloadCurrentTrack = async (forcePlay?: boolean): Promise<boolean> => {
+export const reloadCurrentTrack = async (
+  forcePlay?: boolean,
+  forceNewQuality = false,
+): Promise<boolean> => {
   const media = useMediaStore();
   const track = media.track;
   if (!track || track.source === "local") return false;
   const status = useStatusStore();
   const shouldPlay = forcePlay ?? status.isPlaying;
   const resumePosition = Math.round(playback.getCurrentTime());
+  // 快照当前已接受的音源：显式切换失败时恢复，避免用户被留在停止态或无声降档
+  const previousSource = status.currentSource;
+  const previousProvenance = media.detail?.qualityProvenance;
+  const previousQualityStatus = media.detail?.playbackQuality;
   // 抢占加载令牌，与 loadTrack 互相取消
   const myToken = ++trackToken;
   invalidateNextTrackPreload();
@@ -479,21 +693,50 @@ export const reloadCurrentTrack = async (forcePlay?: boolean): Promise<boolean> 
     false,
     () => myToken === trackToken,
     true,
+    undefined,
+    undefined,
+    forceNewQuality,
   );
   // 被更新的加载接管：由它负责结果，不算本次失败
   if (loaded.status === "cancelled") return true;
+  /** 显式切换失败：明确告知目标不可达并恢复先前音源，不做无声降档 */
+  const failExplicitSwitch = async (): Promise<boolean> => {
+    toast.error(i18n.global.t("quality.playback.targetUnavailable"));
+    if (previousSource) {
+      const requested =
+        loaded.status === "loaded"
+          ? loaded.resolved.qualitySelection
+          : previousQualityStatus?.selection;
+      await restorePreviousSource(
+        track,
+        previousSource,
+        resumePosition,
+        shouldPlay,
+        previousProvenance,
+        requested,
+      );
+    } else status.trackLoading = false;
+    return false;
+  };
   if (loaded.status === "unresolved") {
+    if (forceNewQuality) return await failExplicitSwitch();
     if (loaded.error) handleError(loaded.error);
     status.trackLoading = false;
     return false;
   }
   if (!loaded.result.ok) {
+    if (forceNewQuality) return await failExplicitSwitch();
     if (loaded.result.error) handleError(loaded.result.error);
     return false;
   }
+  // 没有任何提供者能交付所选目标：恢复先前音源并明确告知，不做无声降档
+  if (loaded.qualityShortfall && forceNewQuality) return await failExplicitSwitch();
   if (resumePosition > 0) await seek(resumePosition);
   if (shouldPlay) await play();
-  if (loaded.resolved.cacheRequest) {
+  if (loaded.qualityShortfall) {
+    // 非显式切换拿到可播降档来源：如实提示，不按请求档位写入缓存
+    warnQualityShortfall(track, loaded.qualityShortfall);
+  } else if (loaded.resolved.cacheRequest) {
     cacheScheduler.schedule(track.id, loaded.resolved.cacheRequest);
   }
   scheduleNextTrackPreload();
@@ -829,7 +1072,7 @@ const resumeAfterTagWrite = async (
   if (!track.path) return;
   const myToken = ++trackToken;
   invalidateNextTrackPreload();
-  useMediaStore().setTrack(track);
+  useMediaStore().setTrack(track, null);
   lyricLoader.beginLoad();
   const result = await load(track.path, false, track);
   if (myToken !== trackToken || !result.ok) return;
@@ -1030,6 +1273,8 @@ export const trySmartTransition = async (
       {
         meta: candidate.track,
         context: status.currentPlaybackContext,
+        qualityProvenance: prepared.source.qualityProvenance,
+        qualitySelection: prepared.source.qualitySelection,
         autoPlay: true,
       },
     );
@@ -1476,7 +1721,10 @@ export const restoreLastTrack = async (): Promise<void> => {
       if (settings.system.player.rememberLastTrack && lastPosition > 0) {
         await seek(lastPosition);
       }
-      if (loaded.resolved.cacheRequest) {
+      if (loaded.qualityShortfall) {
+        // 未达请求档位的可播恢复：如实提示，不按请求档位写入缓存
+        warnQualityShortfall(lastTrack, loaded.qualityShortfall);
+      } else if (loaded.resolved.cacheRequest) {
         cacheScheduler.schedule(lastTrack.id, loaded.resolved.cacheRequest);
       }
       if (pendingPlayAfterRestore) {

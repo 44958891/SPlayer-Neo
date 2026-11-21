@@ -154,6 +154,33 @@ splayer.on("musicPic", async ({ musicInfo }) => ({
 
 调用示例见[快速开始](#快速开始)。请求音质不可用时，可返回较低音质并注明 `quality`。
 
+Neo 的平台音质徽标支持两个可选响应字段，不影响旧插件：
+
+- `actualSource`：本次音频实际来源的平台键，如 `netease` / `qqmusic` / `kuwo` / `kugou` / `migu`，也支持 `wy` / `tx` / `kw` / `kg` / `mg` 别名。不要照抄搜索目录的平台，跨平台换源时应返回实际来源
+- `nativeTier`：上游实际响应确认的原生档位。QQ `atmos` 是臻品全景声，`atmos_plus` 是臻品全景声 2.0，二者不能互相代替；QQ 4.0 可明确返回 `qq-master-4.0`。历史文件保留原有品牌来源
+
+平台选择以插件原生请求为准，EM v1.1.9 声明的 29 档如下；声明支持不代表每首歌都提供：
+
+| 平台   | 原生请求档位（从低到高）                                                         |
+| ------ | -------------------------------------------------------------------------------- |
+| 酷我   | `128k`、`320k`、`flac`、`master`（大师音质）                                     |
+| 酷狗   | `128k`、`320k`、`flac`、`hires`、`atmos`（蝰蛇全景声）、`master`（蝰蛇超清）     |
+| QQ     | `128k`、`320k`、`flac`、`hires`、`atmos`、`atmos_plus`、`master`                 |
+| 网易云 | `128k`、`192k`、`320k`、`flac`、`hires`、`jyeffect`（高清臻音）、`sky`、`master` |
+| 咪咕   | `128k`、`320k`、`flac`、`hires`                                                  |
+
+只有上游明确回传该档位时才填写 `nativeTier`。`master` 仅确认母带家族，不自动视为 4.0；旧 `qq-master-2.0` 记录仍可显示母带原图，但不满足新的 4.0 目标。仅有请求参数或 24bit/192kHz 文件规格不能证明品牌母带。提供者声明会显示在徽标提示中；明显低于声明的实测文件显示通用规格。旧 LX 脚本仅返回链接时，宿主保留 `requestedTier` 追溯请求，不据此认定品牌音质。
+
+```ts
+// 示例仅适用于上游响应明确确认实际平台和原生档位的情况
+return {
+  url: resolved.url,
+  quality: "jymaster",
+  actualSource: "qqmusic",
+  nativeTier: "qq-master-4.0",
+};
+```
+
 ### 搜索歌曲 {#musicsearch}
 
 返回独立来源的歌曲搜索结果，也可用于宿主匹配歌词、封面等元数据。

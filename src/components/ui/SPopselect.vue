@@ -44,6 +44,7 @@ const selectedOption = computed(() => props.options.find((o) => o.value === prop
 
 const handleChange = (val: string): void => {
   const opt = props.options.find((o) => String(o.value) === val);
+  if (opt?.disabled) return;
   emit("update:modelValue", opt?.value ?? val);
 };
 </script>
@@ -84,9 +85,11 @@ const handleChange = (val: string): void => {
             v-for="opt in options"
             :key="String(opt.value)"
             :value="String(opt.value)"
+            :disabled="opt.disabled"
             :title="opt.label"
+            :style="opt.style"
             :class="[
-              'relative flex items-center h-8 px-2.5 pr-7 rounded-md cursor-pointer outline-none focus-visible:outline-none transition-colors duration-200',
+              'relative flex items-center h-8 px-2.5 pr-7 rounded-md cursor-pointer outline-none focus-visible:outline-none transition-colors duration-200 data-[disabled]:opacity-45 data-[disabled]:cursor-not-allowed',
               cover ? 'data-[highlighted]:bg-white/10' : 'data-[highlighted]:bg-on-surface/8',
               opt.value === modelValue
                 ? cover
@@ -97,7 +100,10 @@ const handleChange = (val: string): void => {
                   : 'text-on-surface',
             ]"
           >
-            <SelectItemText class="flex-1 truncate">{{ opt.label }}</SelectItemText>
+            <SelectItemText class="flex flex-1 min-w-0 items-center gap-2">
+              <component :is="opt.icon" v-if="opt.icon" class="size-4 shrink-0" />
+              <span class="truncate">{{ opt.label }}</span>
+            </SelectItemText>
             <SelectItemIndicator class="absolute right-2">
               <IconLucideCheck class="size-3.5" :class="cover ? 'text-cover' : 'text-primary'" />
             </SelectItemIndicator>

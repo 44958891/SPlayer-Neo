@@ -18,6 +18,8 @@ import { clearLyricTtmlCache } from "@main/database/lyricTtmlCache";
 import { clearLyricMatchCache } from "@main/database/lyricMatchCache";
 import * as songCache from "@main/services/songCache";
 import type { TrackSource } from "@shared/types/player";
+import type { QualityProvenance, ResolvedAudioFile } from "@shared/types/quality";
+import { validateQualityProvenance } from "@shared/utils/qualityProvenance";
 import { systemLog } from "@main/utils/logger";
 import { defaultCacheDir } from "@main/utils/paths";
 
@@ -251,7 +253,13 @@ export const registerCacheIpc = (): void => {
     songCache.lookup(cacheKey),
   );
 
-  /** 歌曲文件级缓存：排队下载 */
+  /** 歌曲文件级缓存：命中查询（含随存的音质依据，旧记录无 provenance 按未知来源处理） */
+  ipcMain.handle(
+    "cache:song:lookupInfo",
+    (_event, cacheKey: string): Promise<ResolvedAudioFile | null> => songCache.lookupInfo(cacheKey),
+  );
+
+  /** 歌曲文件级缓存：排队下载（跨进程 provenance 先经 validateQualityProvenance 过滤） */
   ipcMain.handle(
     "cache:song:fetch",
     (
@@ -260,7 +268,15 @@ export const registerCacheIpc = (): void => {
       source: TrackSource,
       streamUrl: string,
       preloadId?: string,
-    ): Promise<string | null> => songCache.fetchAsync(cacheKey, source, streamUrl, preloadId),
+      qualityProvenance?: QualityProvenance,
+    ): Promise<string | null> =>
+      songCache.fetchAsync(
+        cacheKey,
+        source,
+        streamUrl,
+        preloadId,
+        validateQualityProvenance(qualityProvenance),
+      ),
   );
 
   /** 歌曲文件级缓存：取消进行中的下载 */

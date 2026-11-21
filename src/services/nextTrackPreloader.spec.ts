@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     player: {
       preloadNextTrack: true,
       songLevel: "hq",
+      songQualitySelection: undefined as string | undefined,
       allowTrialPlay: false,
       transitionMode: "crossfade",
       transitionPreference: "standard",
@@ -63,6 +64,7 @@ describe("下一曲真实预载", () => {
     mocks.settings.player.preloadNextTrack = true;
     mocks.settings.player.transitionMode = "crossfade";
     mocks.settings.player.transitionPreference = "standard";
+    mocks.settings.player.songQualitySelection = undefined;
     mocks.settings.system.cache.songCache = { enabled: true, cacheStreaming: true };
     mocks.candidate.track = { id: "next", source: "netease" };
     mocks.prepare.mockResolvedValue(true);
@@ -95,6 +97,35 @@ describe("下一曲真实预载", () => {
     expect(preloader.consumePreloadedTrack(mocks.candidate.track as Track)?.preparedId).toEqual(
       expect.any(String),
     );
+  });
+
+  it("预载音源下载成缓存路径后保留本次来源依据，不能只留下路径", async () => {
+    const qualityProvenance = {
+      provider: "plugin",
+      platform: "qqmusic",
+      pluginId: "p",
+      nativeTier: "臻品母带4.0",
+      evidence: "plugin",
+      level: "jymaster",
+    };
+    mocks.resolve.mockResolvedValueOnce({
+      source: "https://cdn/master.flac",
+      provider: "plugin",
+      fromCache: false,
+      pluginId: "p",
+      level: "jymaster",
+      qualityProvenance,
+      cacheRequest: vi.fn().mockResolvedValue("C:/cache/master.bin"),
+    });
+    const preloader = await import("./nextTrackPreloader");
+    preloader.scheduleNextTrackPreload();
+    await flushPromises();
+    expect(preloader.consumePreloadedTrack(mocks.candidate.track as Track)?.source).toMatchObject({
+      source: "C:/cache/master.bin",
+      provider: "cache",
+      qualityProvenance,
+      level: "jymaster",
+    });
   });
 
   it("解析返回空值后允许同一候选重新预载", async () => {
@@ -446,5 +477,82 @@ describe("下一曲真实预载", () => {
       preloader.beginPreparedTransition(mocks.candidate.track as Track, "old-slot"),
     ).toBeNull();
     expect(preloader.peekPreparedTrack(mocks.candidate.track as Track)?.preparedId).toBeTruthy();
+  });
+
+  it("预载请求携带保存的具体音质选择", async () => {
+    mocks.settings.player.songQualitySelection = "qqmusic:qq-master-4.0";
+    mocks.candidate.track = { id: "next", source: "qqmusic" };
+    mocks.resolve.mockResolvedValue({
+      source: "C:/cache/next.bin",
+      provider: "cache",
+      fromCache: true,
+    });
+    const preloader = await import("./nextTrackPreloader");
+    preloader.scheduleNextTrackPreload();
+    await flushPromises();
+    expect(mocks.resolve.mock.calls[0]?.[1]).toMatchObject({
+      silent: true,
+      qualitySelection: "qqmusic:qq-master-4.0",
+    });
+    expect(preloader.consumePreloadedTrack(mocks.candidate.track as Track)).not.toBeNull();
+  });
+
+  it("QQ 全景声 plain 与 plus 选择上下文互不匹配，切换后预载作废", async () => {
+    mocks.settings.player.songQualitySelection = "qqmusic:qq-spatial";
+    mocks.candidate.track = { id: "next", source: "qqmusic" };
+    mocks.resolve.mockResolvedValue({
+      source: "C:/cache/next.bin",
+      provider: "cache",
+      fromCache: true,
+    });
+    const preloader = await import("./nextTrackPreloader");
+    preloader.scheduleNextTrackPreload();
+    await flushPromises();
+    expect(preloader.peekPreparedTrack(mocks.candidate.track as Track)?.preparedId).toBeTruthy();
+    // 同属 sky 档的另一具体选择（plus）：上下文指纹不同，旧预载不能冒用
+    mocks.settings.player.songQualitySelection = "qqmusic:qq-spatial-2.0";
+    await flushPromises();
+    expect(preloader.consumePreloadedTrack(mocks.candidate.track as Track)).toBeNull();
+    expect(preloader.peekPreparedTrack(mocks.candidate.track as Track)).toBeNull();
+  });
+
+  it("具体音质选择生效时推迟缓存写入，只预解析地址", async () => {
+    mocks.settings.player.songQualitySelection = "qqmusic:qq-spatial-2.0";
+    mocks.candidate.track = { id: "next", source: "qqmusic" };
+    const cacheRequest = vi.fn().mockResolvedValue("C:/cache/next.bin");
+    mocks.resolve.mockResolvedValue({
+      source: "https://music/next",
+      provider: "official",
+      fromCache: false,
+      qualitySelection: "qqmusic:qq-spatial-2.0",
+      cacheRequest,
+    });
+    const preloader = await import("./nextTrackPreloader");
+    preloader.scheduleNextTrackPreload();
+    await flushPromises();
+    // 验证通过前不做完整缓存写入，也没有远端地址的原生预载
+    expect(cacheRequest).not.toHaveBeenCalled();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    const consumed = preloader.consumePreloadedTrack(mocks.candidate.track as Track);
+    expect(consumed?.source?.cacheRequest).toBe(cacheRequest);
+    expect(consumed?.source?.qualitySelection).toBe("qqmusic:qq-spatial-2.0");
+  });
+
+  it("无具体选择时预载照常落缓存", async () => {
+    const cacheRequest = vi.fn().mockResolvedValue("C:/cache/next.bin");
+    mocks.resolve.mockResolvedValue({
+      source: "https://music/next",
+      provider: "official",
+      fromCache: false,
+      cacheRequest,
+    });
+    const preloader = await import("./nextTrackPreloader");
+    preloader.scheduleNextTrackPreload();
+    await flushPromises();
+    expect(cacheRequest).toHaveBeenCalledOnce();
+    expect(preloader.consumePreloadedTrack(mocks.candidate.track as Track)?.source).toMatchObject({
+      source: "C:/cache/next.bin",
+      provider: "cache",
+    });
   });
 });

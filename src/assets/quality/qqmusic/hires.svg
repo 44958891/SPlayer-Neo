@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="99" height="33" viewBox="0 0 99 33" fill="none">
+  <!-- Hi-Res 高清版本 v2 - 增强清晰度 -->
+  <defs>
+    <linearGradient id="qq-hires-grad-v2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color: #5dd9ff; stop-opacity: 1" />
+      <stop offset="100%" style="stop-color: #0099ff; stop-opacity: 1" />
+    </linearGradient>
+    <filter id="qq-hires-shadow-v2">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="0.5" />
+    </filter>
+  </defs>
+
+  <!-- 背景圆角矩形 -->
+  <rect
+    x="0.5"
+    y="0.5"
+    width="98"
+    height="32"
+    rx="5"
+    fill="url(#qq-hires-grad-v2)"
+    stroke="#0066CC"
+    stroke-width="1"
+    opacity="1"
+  />
+
+  <!-- Hi-Res 文字 - 增加字重 -->
+  <text
+    x="49.5"
+    y="23"
+    font-family="Arial, 'Microsoft YaHei', sans-serif"
+    font-size="17"
+    font-weight="900"
+    fill="#FFFFFF"
+    text-anchor="middle"
+    letter-spacing="0.5"
+    paint-order="stroke"
+  >
+    Hi-Res
+  </text>
+
+  <!-- 右侧装饰高光 - 更明亮 -->
+  <circle cx="88" cy="10" r="3" fill="#FFFFFF" opacity="0.8" />
+  <circle cx="85" cy="12" r="1.5" fill="#FFFFFF" opacity="0.5" />
+</svg>

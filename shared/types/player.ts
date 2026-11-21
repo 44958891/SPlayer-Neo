@@ -1,6 +1,8 @@
 import type { LyricFormat } from "./lyrics";
 import type { Platform } from "./platform";
 import type { MusicSearchCandidate } from "./plugin";
+import type { QualityProvenance } from "./quality";
+import type { PlaybackQualityStatus } from "./playbackQuality";
 
 /** 播放器状态 */
 export type PlayerState = "idle" | "loading" | "playing" | "paused" | "stopped";
@@ -140,6 +142,8 @@ export interface Track {
   ctime?: number;
   /** 音质信息 */
   quality?: AudioQuality;
+  /** 当前文件或音频源的档位依据，不能由歌曲目录平台推定 */
+  qualityProvenance?: QualityProvenance;
   /** 付费标记 */
   fee?: TrackFee;
   /** 云盘歌曲 */
@@ -155,6 +159,9 @@ export interface PlaybackQueueItem {
 /** 歌曲详细信息 */
 export interface TrackDetail {
   quality: AudioQuality;
+  qualityProvenance?: QualityProvenance;
+  /** 当前加载的请求目标与实际档位是否一致 */
+  playbackQuality?: PlaybackQualityStatus;
   embeddedLyric?: string;
   /** 外部歌词文件列表 */
   externalLyrics: { format: LyricFormat; path: string }[];
@@ -174,6 +181,8 @@ export interface MediaInfo {
   cover?: string;
   /** 音质信息 */
   quality?: AudioQuality;
+  /** 当前文件或音频源的档位依据，不能由歌曲目录平台推定 */
+  qualityProvenance?: QualityProvenance;
 }
 
 /** 播放器加载后返回的完整数据 */
@@ -198,6 +207,10 @@ export interface LoadOptions {
   meta?: Track;
   /** 本次播放的来源上下文 */
   context?: PlaybackContext;
+  /** 本次解析得到的音源依据，不复用队列里上一次播放的来源 */
+  qualityProvenance?: QualityProvenance;
+  /** 本次选择的具体目标，与实际来源声明分开保存 */
+  qualitySelection?: string;
 }
 
 /** 播放器状态快照 */

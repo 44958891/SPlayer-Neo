@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import type { Artist } from "@shared/types/player";
+import type { Artist, AudioQuality } from "@shared/types/player";
+import type { QualityProvenance } from "@shared/types/quality";
 import type { SSelectOption } from "@/components/ui/SSelect.vue";
 import { useMediaStore } from "@/stores/media";
 import { useStatusStore } from "@/stores/status";
 import { useSettingsStore } from "@/stores/settings";
-import { getQualityLevel } from "@/utils/quality";
 import QualityTag from "@/components/ui/QualityTag.vue";
+import QualityStatusIndicator from "@/components/player/QualityStatusIndicator.vue";
 import {
   canNavigateToResource,
   navigateToResource,
@@ -101,10 +102,28 @@ const sourceLabel = computed(() => {
   return source.toUpperCase();
 });
 
-/** 音质等级标签（按实际播放的音频信息判定，与本地音乐同款规则） */
-const quality = computed(() => media.detail?.quality ?? displayTrack.value?.quality);
-/** 音质档位（按实际播放的音频信息判定，与本地音乐同款规则） */
-const playQualityLevel = computed(() => getQualityLevel(quality.value));
+/** 行内音质徽标数据 */
+interface PlayQuality {
+  quality: AudioQuality;
+  provenance?: QualityProvenance;
+  measured: boolean;
+}
+
+/** 实际播放音质：详情与当前曲目一体采用，避免换曲瞬间混入旧详情；无详情时回落曲目目录数据 */
+const playQuality = computed<PlayQuality | null>(() => {
+  const detail = media.detail;
+  const track = media.track;
+  if (track && detail) {
+    return { quality: detail.quality, provenance: detail.qualityProvenance, measured: true };
+  }
+  const fallback = displayTrack.value;
+  if (!fallback?.quality) return null;
+  return {
+    quality: fallback.quality,
+    provenance: fallback.qualityProvenance,
+    measured: fallback.source === "local",
+  };
+});
 
 /** 歌词格式标签 */
 const lyricLabel = computed(() => media.activeLyric?.format.toUpperCase() ?? "NO-LRC");
@@ -171,7 +190,15 @@ const alignItems = computed(() => {
         class="inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-md border border-solid border-cover/30 px-1.5 text-[1em] leading-none transition-colors hover:border-cover/60"
         @click="status.audioInfoOpen = true"
       >
-        <QualityTag :level="playQualityLevel" />
+        <QualityTag
+          v-if="playQuality"
+          :quality="playQuality.quality"
+          :provenance="playQuality.provenance"
+          :measured="playQuality.measured"
+          cover
+        />
+        <span v-else>—</span>
+        <QualityStatusIndicator :status="media.detail?.playbackQuality" />
       </span>
       <SPopselect
         v-model="settings.lyric.lyricSourcePreference"

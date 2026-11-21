@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   streamingPrepare: vi.fn(),
   streamingStart: vi.fn(),
   streamingStop: vi.fn(),
+  downloadedFileInfo: vi.fn(),
   mediaEvent: (_event: { type: string; positionMs?: number }) => {},
 }));
 vi.mock("electron", () => ({
@@ -87,6 +88,9 @@ vi.mock("@main/services/streaming/adapters/resolve", () => ({
   invalidateStreamingSession: vi.fn(),
 }));
 vi.mock("@main/services/songCache", () => ({}));
+vi.mock("@main/services/downloadManager", () => ({
+  lookupDownloadedFileInfoByPath: mocks.downloadedFileInfo,
+}));
 vi.mock("@main/services/thumbar", () => ({ getThumbar: () => null }));
 vi.mock("@main/services/tray", () => ({ setTraySongName: vi.fn(), setTrayPlayState: vi.fn() }));
 vi.mock("@main/services/thumbnail", () => ({ setTaskbarThumbnailCover: vi.fn() }));
@@ -113,9 +117,142 @@ describe("交接响应的主进程竞态保护", () => {
     mocks.seek.mockResolvedValue(undefined);
     mocks.load.mockResolvedValue(meta);
     mocks.streamingPrepare.mockReset().mockResolvedValue(undefined);
+    mocks.downloadedFileInfo.mockReset().mockResolvedValue(null);
     mocks.streamingStop.mockResolvedValue(undefined);
     const { registerPlayerIpc } = await import("./player");
     registerPlayerIpc();
+  });
+
+  it("本次取链的来源随解码结果返回，不能继承目录中的旧来源", async () => {
+    const stale = {
+      provider: "official",
+      platform: "netease",
+      nativeTier: "jymaster",
+      level: "jymaster",
+      evidence: "response",
+    };
+    const current = {
+      provider: "plugin",
+      pluginId: "p",
+      platform: "qqmusic",
+      nativeTier: "臻品母带2.0",
+      level: "jymaster",
+      evidence: "plugin",
+    };
+    const result = await invoke("player:load", "https://cdn/song.flac", {
+      meta: { ...options.meta, source: "netease", qualityProvenance: stale },
+      qualityProvenance: current,
+    });
+    expect(result).toMatchObject({
+      success: true,
+      data: { detail: { qualityProvenance: current }, mediaInfo: { qualityProvenance: current } },
+    });
+    const next = await invoke("player:load", "https://cdn/unknown.flac", {
+      meta: { ...options.meta, source: "netease", qualityProvenance: stale },
+    });
+    expect(next).toMatchObject({
+      success: true,
+      data: { detail: { qualityProvenance: undefined } },
+    });
+  });
+
+  it("音质验证使用解码器原始参数，输出位深不参与判定", async () => {
+    mocks.load.mockResolvedValueOnce({
+      ...meta,
+      originalSampleRate: 48000,
+      channels: 2,
+      bitsPerSample: 16,
+      bitRate: 900000,
+      codec: "flac",
+    });
+    const result = await invoke("player:load", "https://cdn/low.flac", {
+      meta: { ...options.meta, source: "migu" },
+      qualitySelection: "migu:migu-premium",
+      qualityProvenance: {
+        provider: "plugin",
+        platform: "migu",
+        nativeTier: "flac",
+        level: "lossless",
+        evidence: "plugin",
+        platformEvidence: "source",
+        requestedSelection: "migu:migu-premium",
+        requestedTier: "hires",
+      },
+    });
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        detail: {
+          quality: { sampleRate: 48000, bitsPerSample: 16, codec: "flac" },
+          playbackQuality: {
+            selection: "migu:hires",
+            state: "below",
+            actualLevel: "lossless",
+          },
+        },
+      },
+    });
+  });
+
+  it("QQ 的已确认 Hi-Res 原始 192kHz 参数和目标一并返回，不生成品牌母带目标", async () => {
+    mocks.load.mockResolvedValueOnce({
+      ...meta,
+      originalSampleRate: 192000,
+      channels: 2,
+      bitsPerSample: 24,
+      bitRate: 6000000,
+      codec: "flac",
+    });
+    const result = await invoke("player:load", "https://cdn/hires.flac", {
+      meta: { ...options.meta, source: "qqmusic" },
+      qualitySelection: "qqmusic:AI00",
+      qualityProvenance: {
+        provider: "official",
+        platform: "qqmusic",
+        nativeTier: "AI00",
+        level: "hi-res",
+        evidence: "filename",
+      },
+    });
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        detail: {
+          quality: { sampleRate: 192000 },
+          playbackQuality: { selection: "qqmusic:AI00", state: "met" },
+        },
+      },
+    });
+  });
+
+  it("本地文件只继承当前路径验证成功的下载来源，CUE 分轨和失配文件清除旧标识", async () => {
+    const provenance = {
+      provider: "plugin",
+      pluginId: "p",
+      platform: "kuwo",
+      nativeTier: "至臻母带",
+      evidence: "plugin",
+    };
+    mocks.downloadedFileInfo.mockResolvedValueOnce({
+      path: "next.wav",
+      qualityProvenance: provenance,
+    });
+    expect(await invoke("player:load", "next.wav", options)).toMatchObject({
+      success: true,
+      data: { detail: { qualityProvenance: provenance } },
+    });
+    expect(
+      await invoke("player:load", "replaced.wav", {
+        meta: { ...options.meta, qualityProvenance: provenance },
+      }),
+    ).toMatchObject({ success: true, data: { detail: { qualityProvenance: undefined } } });
+    mocks.downloadedFileInfo.mockClear();
+    expect(
+      await invoke("player:load", "album.flac", {
+        meta: { ...options.meta, cuePath: "album.cue", qualityProvenance: provenance },
+      }),
+    ).toMatchObject({ success: true, data: { detail: { qualityProvenance: undefined } } });
+    expect(mocks.downloadedFileInfo).not.toHaveBeenCalled();
   });
 
   it.each(["停止", "跳转", "重置", "加载新曲", "系统停止", "系统跳转"])(

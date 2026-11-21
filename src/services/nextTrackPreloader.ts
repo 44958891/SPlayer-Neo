@@ -53,6 +53,7 @@ const buildContextKey = (track: Track): string => {
     track.cueStartMs ?? "",
     track.cueEndMs ?? "",
     settings.player.songLevel,
+    settings.player.songQualitySelection ?? "",
     settings.player.transitionMode,
     settings.player.transitionPreference,
     settings.player.allowTrialPlay,
@@ -262,9 +263,10 @@ export const scheduleNextTrackPreload = (): void => {
       if (candidateTrack.cover) {
         void preloadCover(candidateTrack.cover);
       }
-      // 音源预拉取
+      // 音源预拉取；带上与播放一致的具体音质选择，预载结果才不会与实际请求档位错位
       let source = await resolveTrackSource(candidateTrack, {
         silent: true,
+        qualitySelection: settings.player.songQualitySelection,
       });
       if (token !== currentToken) return;
       if (!source) {
@@ -275,10 +277,20 @@ export const scheduleNextTrackPreload = (): void => {
         invalidateNextTrackPreload();
         return;
       }
-      if (source.cacheRequest) {
+      // 具体音质选择生效时缓存写入推迟到播放校验通过之后：预载只预解析地址，不落完整缓存文件
+      const deferCacheWrite = Boolean(settings.player.songQualitySelection);
+      if (source.cacheRequest && !deferCacheWrite) {
         const cachedPath = await source.cacheRequest(id, abort.signal);
         if (token !== currentToken) return;
-        if (cachedPath) source = { source: cachedPath, fromCache: true, provider: "cache" };
+        if (cachedPath) {
+          source = {
+            ...source,
+            source: cachedPath,
+            fromCache: true,
+            provider: "cache",
+            cacheRequest: undefined,
+          };
+        }
       }
       let preparedId: string | undefined;
       if (source.provider === "local" || source.provider === "download" || source.fromCache) {
@@ -333,6 +345,7 @@ export const installNextTrackPreloadWatchers = (): void => {
       settings.system.cache.songCache.enabled,
       settings.system.cache.songCache.cacheStreaming,
       settings.player.songLevel,
+      settings.player.songQualitySelection,
       settings.player.allowTrialPlay,
       status.playIndex,
       status.state,

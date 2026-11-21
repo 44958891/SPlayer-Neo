@@ -43,7 +43,9 @@ const config: Configuration = {
   generateUpdatesFilesForAllChannels: true,
   files: [
     "public/**",
-    "out/**",
+    "out/main/**",
+    "out/preload/**",
+    "out/renderer/**",
     "!**/.vscode/*",
     "!src/**",
     "!native/**",

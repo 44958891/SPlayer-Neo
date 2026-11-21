@@ -35,6 +35,12 @@ export const registerDownloadIpc = (): void => {
   ipcMain.handle("download:lookup", (_evt, track: DownloadTrackIdentity) =>
     downloadManager.lookupDownloadedFile(track),
   );
+  ipcMain.handle("download:lookupInfo", (_evt, track: DownloadTrackIdentity) =>
+    downloadManager.lookupDownloadedFileInfo(track),
+  );
+  ipcMain.handle("download:lookupInfoByPath", (_evt, filePath: string) =>
+    downloadManager.lookupDownloadedFileInfoByPath(filePath),
+  );
 
   ipcMain.handle("download:getDir", () => getDownloadDir());
   ipcMain.handle("download:resetDir", () => {

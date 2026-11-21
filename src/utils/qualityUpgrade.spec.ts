@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Track } from "@shared/types/player";
+import type { QualityProvenance } from "@shared/types/quality";
 import {
   findUpgradeMatch,
   hasVersionWord,
+  orderUpgradePlatforms,
   pathDirName,
   pathExt,
   rankUpgradeCandidates,
@@ -129,5 +131,50 @@ describe("pathDirName / pathExt", () => {
   });
   it("取小写扩展名", () => {
     expect(pathExt("D:\\Music\\老歌.FLAC")).toBe(".flac");
+  });
+});
+
+describe("orderUpgradePlatforms 稳定优先序", () => {
+  const withProvenance = (provenance: QualityProvenance | undefined): Track =>
+    track({ qualityProvenance: provenance });
+
+  it("本地文件来源平台最优先，其余按固定平台表", () => {
+    const ordered = orderUpgradePlatforms(
+      withProvenance({
+        provider: "plugin",
+        evidence: "plugin",
+        platform: "kuwo",
+      }),
+      ["netease", "qqmusic", "kugou", "kuwo", "migu"],
+    );
+    expect(ordered).toEqual(["kuwo", "netease", "qqmusic", "kugou", "migu"]);
+  });
+
+  it("无可靠解析依据时按固定平台表", () => {
+    expect(orderUpgradePlatforms(withProvenance(undefined), ["migu", "netease"])).toEqual([
+      "netease",
+      "migu",
+    ]);
+  });
+
+  it("非法依据（provider/evidence 不合规）不参与优先序", () => {
+    expect(
+      orderUpgradePlatforms(
+        withProvenance({
+          provider: "evil",
+          evidence: "nope",
+        } as unknown as QualityProvenance),
+        ["netease", "kuwo"],
+      ),
+    ).toEqual(["netease", "kuwo"]);
+  });
+
+  it("过滤未启用的平台，优先平台不在启用列表时按默认序", () => {
+    expect(
+      orderUpgradePlatforms(
+        withProvenance({ provider: "official", evidence: "response", platform: "migu" }),
+        ["netease", "qqmusic"],
+      ),
+    ).toEqual(["netease", "qqmusic"]);
   });
 });

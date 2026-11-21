@@ -1,8 +1,8 @@
 import type { AudioQuality } from "@shared/types/player";
 
-/** 音质等级（jymaster/sky/jyeffect 仅网易官方接口提供，其他平台自动回落最高档） */
-export type QualityLevel =
-  "jymaster" | "sky" | "jyeffect" | "hi-res" | "lossless" | "hq" | "sq" | "lq";
+import type { QualityLevel } from "@shared/types/quality";
+
+export type { QualityLevel } from "@shared/types/quality";
 
 /** 音质档位由低到高的顺序，用于档位比较与降级选择 */
 export const QUALITY_ORDER: readonly QualityLevel[] = [

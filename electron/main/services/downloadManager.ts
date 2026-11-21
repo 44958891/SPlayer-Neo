@@ -25,11 +25,15 @@ import {
   findExistingAudio,
   KNOWN_EXTS,
 } from "@main/utils/filename";
-import { levelMeets, levelOfQuality, type QualityLevel } from "@shared/utils/quality";
+import { levelMeets, levelOfQuality, qualityRank, type QualityLevel } from "@shared/utils/quality";
+import { validateQualityProvenance } from "@shared/utils/qualityProvenance";
+import { findPlatformQuality } from "@shared/utils/platformQuality";
+import { downloadQualityMeets } from "@shared/utils/downloadQuality";
 import * as db from "@main/database/downloads";
 import { ErrorCode } from "@shared/types/errors";
 import type { JsTagWriteRequest } from "@splayer/audio-engine";
 import type { AudioQuality } from "@shared/types/player";
+import type { ResolvedAudioFile } from "@shared/types/quality";
 import type {
   DownloadRequest,
   DownloadResolvePayload,
@@ -99,13 +103,26 @@ const resolutionGates = new Map<string, ResolutionGate>();
 /** 临时分片目录（与用户下载目录隔离） */
 const tmpDir = (): string => path.join(getAppCacheDir(), "downloads-tmp");
 
-/** 去重键：同一首歌同一档位只下一次 */
+/** 去重键：同一首歌同一档位只下一次；具体选择并入键，区分同等级的不同品牌档位 */
 const dedupeKeyOf = (req: DownloadRequest): string =>
-  `${req.track.source}:${req.track.id}:${req.qualityLevel}`;
+  `${req.track.source}:${req.track.id}:${req.qualityLevel}:${req.qualitySelection ?? ""}`;
 
 /** 合并艺术家名 */
 const artistString = (req: DownloadRequest): string =>
   req.track.artists.map((artist) => artist.name).join("/");
+
+/**
+ * 取多个档位中的最高者（忽略缺省值），升级下限按「目标档位 vs 原文件实测」取最高
+ * @param levels - 候选档位，允许 null/undefined
+ * @returns 最高档位；全部缺省返回 null
+ */
+const maxQualityLevel = (...levels: (QualityLevel | null | undefined)[]): QualityLevel | null => {
+  let best: QualityLevel | null = null;
+  for (const level of levels) {
+    if (level && (!best || qualityRank(level) > qualityRank(best))) best = level;
+  }
+  return best;
+};
 
 /** 本地同名检测认可的音频扩展名（与下载落盘清单同源，避免两处漂移） */
 const LOCAL_AUDIO_EXTS = KNOWN_EXTS;
@@ -318,6 +335,7 @@ const runTask = async (
         taskId: req.taskId,
         track: req.track,
         qualityLevel: req.qualityLevel,
+        qualitySelection: req.qualitySelection,
         tagOptions: req.tagOptions,
         coverUrl: req.coverUrl,
         lyricFileFormat: req.lyricFileFormat,
@@ -394,26 +412,58 @@ const runTask = async (
     await moveFile(partPath, partWithExt);
     verifiedPath = partWithExt;
 
-    // 升级任务：替换下限 = 请求显式下限 ?? 原文件探测档位（此刻原文件尚未被动过）
+    // 升级任务：此刻原文件尚未被动过，探测其档位参与下限取最高
     const replaceSource =
       req.replaceSourcePath && fs.existsSync(req.replaceSourcePath) ? req.replaceSourcePath : null;
     const probedLevel = replaceSource ? await probeFileLevel(replaceSource) : null;
+    // 选择项对应的平台音质选项；未带选择的下载为空
+    const selectionOption = req.qualitySelection
+      ? findPlatformQuality(req.qualitySelection)
+      : undefined;
     /**
      * 落盘档位下限：
-     * - 升级任务：不能低于原文件（保持"只升不降"）
+     * - 升级任务：目标档位（请求显式下限）与原文件实测档位取最高——只升不降，
+     *   原文件损坏探测不出档位时由请求下限兜底
      * - 普通下载：必须达到用户所选档位——宁可在下载页报错，也不静默降级成低音质
      *   （此前普通下载传 null，档位校验被整个跳过，选了 Master 拿到 Lossless 也会成功）
+     * - 声明类选择（臻品/空间/环绕）不走通用大小序：臻品按物理规格卡 Hi-Res，
+     *   空间/环绕交给 downloadQualityMeets 的声明校验
      * - 流媒体：取流地址的档位由服务端决定，不做限制
      */
     const minLevel: QualityLevel | null = replaceSource
-      ? (req.minLevel ?? probedLevel)
+      ? maxQualityLevel(req.minLevel, probedLevel, req.qualityLevel)
       : req.track.source === "streaming"
         ? null
-        : req.qualityLevel;
+        : selectionOption?.requiresDeclaration
+          ? (selectionOption.minimumLevel ??
+            (selectionOption.family === "premium" ? "hi-res" : null))
+          : req.qualityLevel;
 
     // 先校验候选文件再落位覆盖：无效数据（音源加密/损坏）必拒；
     // 实际档位低于下限也拒。杜绝"先覆盖再发现是垃圾"导致原文件丢失
     const quality = await verifyDownloadCandidate(partWithExt, minLevel);
+    // 带平台具体选择时按选择项校验（声明档位、来源平台、品牌档位映射）；
+    // 未带选择返回 undefined，保持原有通用下限行为
+    if (
+      downloadQualityMeets({
+        selection: req.qualitySelection,
+        qualityLevel: req.qualityLevel,
+        source: req.track.source,
+        provenance: validateQualityProvenance(req.qualityProvenance),
+        quality,
+      }) === false
+    ) {
+      throw Object.assign(
+        new Error(
+          `declared quality not met: ${req.qualitySelection} got ${levelOfQuality(quality)}`,
+        ),
+        {
+          errorCode: ErrorCode.DOWNLOAD_QUALITY_NOT_MET,
+          actualLevel: levelOfQuality(quality),
+          requiredLevel: req.qualityLevel,
+        },
+      );
+    }
     verifiedPath = null;
 
     // 扩展名以解码器实测编解码器为准：插件声明格式常缺失、CDN 的 Content-Type
@@ -433,7 +483,18 @@ const runTask = async (
     await writeLyricFiles(req, finalPath);
     const tagOk = await applyTags(req, finalPath);
 
-    task.track = { ...task.track, quality };
+    // 最终 stat 在写标签之后取：写标签走 temp+rename 会刷新 mtime，
+    // size+mtime 是 provenance 复用时识别"就是这个文件"的印章
+    const finalStat = await fsp.stat(finalPath);
+    // provenance 只认本次请求/解析回传的证据：track 上残留的旧品牌（历史播放/目录推定）
+    // 不代表本次文件来源，本次未回传时必须清空而不是继承
+    task.track = {
+      ...task.track,
+      quality,
+      qualityProvenance: validateQualityProvenance(req.qualityProvenance),
+      fileSize: finalStat.size,
+      mtime: Math.floor(finalStat.mtimeMs),
+    };
     task.probed = true;
     task.status = "done";
     task.received = received;
@@ -603,7 +664,10 @@ const enqueueOne = async (
       completedByQuality?.set(req.qualityLevel, completed);
     }
     const downloaded = completed.find(
-      (task) => task.track.source === req.track.source && task.track.id === req.track.id,
+      (task) =>
+        task.track.source === req.track.source &&
+        task.track.id === req.track.id &&
+        (task.qualitySelection ?? undefined) === (req.qualitySelection ?? undefined),
     );
     if (downloaded?.filePath && fs.existsSync(downloaded.filePath)) {
       return { ok: false, reason: "downloaded" };
@@ -616,8 +680,10 @@ const enqueueOne = async (
   const task: DownloadTask = {
     taskId: req.taskId,
     status: "queued",
-    track: req.track,
+    // 重试复用的旧任务 track 可能残留上次解析的 provenance，剥离后只认本次请求/解析回传
+    track: { ...req.track, qualityProvenance: undefined },
     qualityLevel: req.qualityLevel,
+    qualitySelection: req.qualitySelection,
     received: 0,
     total: req.declaredSize ?? 0,
     targetDir: req.targetDir,
@@ -735,6 +801,70 @@ export const lookupDownloadedFile = async (
     }
   }
   return null;
+};
+
+/**
+ * 文件印章校验：size+mtime 与落盘记录一致才允许复用随存的 provenance
+ * 文件被移动、替换或老记录没存印章时一律降级为 generic（不带 provenance）
+ * @param record - 任务行里随存的音质信息
+ * @param stat - 当前文件 stat
+ * @returns 是否匹配，时间戳与原生扫描器一致截断为整数毫秒
+ */
+const stampMatches = (record: { fileSize?: number; mtime?: number }, stat: fs.Stats): boolean =>
+  record.mtime !== undefined &&
+  record.fileSize !== undefined &&
+  record.fileSize === stat.size &&
+  record.mtime === Math.floor(stat.mtimeMs);
+
+/**
+ * 按歌曲身份查找仍存在的已下载文件及随存音质依据
+ * provenance 只在文件印章（size+mtime）与落盘记录一致时回传，实际音质仍以播放解码为准
+ * @param track - 待播放歌曲的身份
+ * @returns 最近完成且仍存在的文件信息，未命中返回 null
+ */
+export const lookupDownloadedFileInfo = async (
+  track: DownloadTrackIdentity,
+): Promise<ResolvedAudioFile | null> => {
+  if (track.source === "local") return null;
+  for (const record of db.listCompletedRecords(track)) {
+    try {
+      const stat = await fsp.stat(record.path);
+      if (!stat.isFile() || stat.size === 0) continue;
+      return {
+        path: record.path,
+        quality: stampMatches(record, stat) ? record.quality : undefined,
+        qualityProvenance: stampMatches(record, stat) ? record.qualityProvenance : undefined,
+      };
+    } catch {
+      // 下载文件可能已被用户移动或删除，保留记录供下载页查看
+    }
+  }
+  return null;
+};
+
+/**
+ * 按精确路径查询已下载文件的随存音质依据（本地播放回放识别用，单行查询单次 stat）
+ * @param filePath - 音频文件绝对路径
+ * @returns 文件仍存在时返回其信息；文件被替换时 provenance 降级 generic，不存在返回 null
+ */
+export const lookupDownloadedFileInfoByPath = async (
+  filePath: string,
+): Promise<ResolvedAudioFile | null> => {
+  const record = db.findCompletedByPath(filePath);
+  if (!record) return null;
+  let stat: fs.Stats;
+  try {
+    stat = await fsp.stat(filePath);
+  } catch {
+    return null;
+  }
+  if (!stat.isFile() || stat.size === 0) return null;
+  const trusted = stampMatches(record, stat);
+  return {
+    path: filePath,
+    quality: trusted ? record.quality : undefined,
+    qualityProvenance: trusted ? record.qualityProvenance : undefined,
+  };
 };
 
 /** 启动初始化 */

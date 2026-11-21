@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { StyleValue } from "vue";
+import type { Component, StyleValue } from "vue";
 import { usePopupZIndex } from "@/composables/useZIndex";
 
 export interface SSelectOption {
@@ -7,6 +7,10 @@ export interface SSelectOption {
   label: string;
   /** 单条选项的内联样式 */
   style?: StyleValue;
+  /** 不可达的单个档位保持可见但禁止选择 */
+  disabled?: boolean;
+  /** 选项前缀装饰图标（aria-hidden，仅在菜单与选中值中展示） */
+  icon?: Component;
 }
 
 export interface SSelectProps {
@@ -31,12 +35,12 @@ const emit = defineEmits<{
 
 const { zIndex, onOpenChange } = usePopupZIndex();
 
-const selectedLabel = computed(
-  () => props.options.find((o) => o.value === props.modelValue)?.label ?? props.placeholder,
-);
+/** 当前选中项，触发器展示装饰图标 + 纯文本标签 */
+const selectedOption = computed(() => props.options.find((o) => o.value === props.modelValue));
 
 const handleChange = (val: string) => {
   const opt = props.options.find((o) => String(o.value) === val);
+  if (opt?.disabled) return;
   emit("update:modelValue", opt?.value ?? val);
 };
 </script>
@@ -52,8 +56,15 @@ const handleChange = (val: string) => {
       class="group flex w-full items-center justify-between gap-2 h-8.5 px-3 text-sm text-on-surface bg-field border border-solid border-on-surface/20 cursor-pointer outline-none focus-visible:outline-none transition-[border-color,box-shadow,opacity] duration-250 hover:border-on-surface/50 data-[state=open]:border-primary data-[state=open]:ring-2 data-[state=open]:ring-primary/25 disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
       :class="round ? 'rounded-full' : 'rounded-lg'"
     >
-      <SelectValue class="min-w-0 truncate">
-        <span class="truncate">{{ selectedLabel }}</span>
+      <SelectValue class="min-w-0">
+        <span class="flex min-w-0 items-center gap-2">
+          <component
+            :is="selectedOption?.icon"
+            v-if="selectedOption?.icon"
+            class="size-4 shrink-0"
+          />
+          <span class="truncate">{{ selectedOption?.label ?? placeholder }}</span>
+        </span>
       </SelectValue>
       <SelectIcon as-child>
         <IconLucideChevronDown
@@ -75,12 +86,16 @@ const handleChange = (val: string) => {
             v-for="opt in options"
             :key="String(opt.value)"
             :value="String(opt.value)"
+            :disabled="opt.disabled"
             :title="opt.label"
             :style="opt.style"
-            class="relative flex items-center h-8.5 px-3 pr-8 text-sm rounded-md cursor-pointer outline-none focus-visible:outline-none transition-[background-color,color] duration-200 data-[highlighted]:bg-on-surface/8"
+            class="relative flex items-center h-8.5 px-3 pr-8 text-sm rounded-md cursor-pointer outline-none focus-visible:outline-none transition-[background-color,color] duration-200 data-[highlighted]:bg-on-surface/8 data-[disabled]:opacity-45 data-[disabled]:cursor-not-allowed"
             :class="opt.value === modelValue ? 'text-primary' : 'text-on-surface'"
           >
-            <SelectItemText class="truncate">{{ opt.label }}</SelectItemText>
+            <SelectItemText class="flex min-w-0 items-center gap-2">
+              <component :is="opt.icon" v-if="opt.icon" class="size-4 shrink-0" />
+              <span class="truncate">{{ opt.label }}</span>
+            </SelectItemText>
             <SelectItemIndicator class="absolute right-2">
               <IconLucideCheck class="size-3.5 text-primary" />
             </SelectItemIndicator>

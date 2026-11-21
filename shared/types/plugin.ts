@@ -30,8 +30,8 @@ export type PluginAction =
  * - sq：有损 ≥ 192kbps
  * - lq：有损 < 192kbps
  */
-export type PluginQuality =
-  "jymaster" | "sky" | "jyeffect" | "hi-res" | "lossless" | "hq" | "sq" | "lq";
+export type { QualityLevel as PluginQuality } from "./quality";
+import type { QualityLevel as PluginQuality } from "./quality";
 
 /** 插件类型清单：运行时校验与分类的唯一来源，新增类型只改这里 */
 export const PLUGIN_TYPES = ["source", "control"] as const;
@@ -161,6 +161,11 @@ export interface SourceCapability {
   actions: PluginAction[];
   /** 支持的音质 */
   qualities?: PluginQuality[];
+  /** LX 原始档位或插件具体选择标识，区分同等级的增强与空间音频 */
+  nativeQualities?: string[];
+  /** 源明确声明的版本化实际档位回执协议 */
+  gzQualityEvidenceVersion?: number;
+  gzQualityAliases?: Record<string, string>;
 }
 
 /** 插件运行状态 */
@@ -208,6 +213,8 @@ export interface PluginInfo {
 export interface MusicUrlReq {
   source: string;
   quality: PluginQuality;
+  /** 当前平台的精确音质选择标识，旧插件可忽略 */
+  qualitySelection?: string;
   musicInfo: {
     songmid: string;
     name?: string;
@@ -219,6 +226,15 @@ export interface MusicUrlRes {
   url: string;
   quality?: PluginQuality;
   expire?: number;
+  /** 插件确认的实际音频平台，与搜索歌曲的平台分别记录 */
+  actualSource?: string;
+  /** 插件响应明确给出的原生档位 */
+  nativeTier?: string;
+  /** LX 兼容请求的原生档位，不作为实际返回档位的证据 */
+  requestedTier?: string;
+  requestedSelection?: string;
+  /** 版本化回执确认请求通道中的实际档位，不等于验证 CDN 最终平台 */
+  sourceEvidence?: "gzPlayback-v1";
 }
 
 export interface MenuClickReq {
@@ -493,6 +509,7 @@ export interface PluginResolveUrlArgs {
   pluginId: string;
   source: string;
   quality?: PluginQuality;
+  qualitySelection?: string;
   musicInfo: { songmid: string; [key: string]: unknown };
   /**
    * 单次取链超时（毫秒）

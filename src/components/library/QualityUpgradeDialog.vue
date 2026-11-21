@@ -11,12 +11,18 @@ import type { Platform } from "@shared/types/platform";
 import type { DownloadRequest, DownloadTask, EnqueueResult } from "@shared/types/download";
 import type { QualityLevel } from "@/utils/quality";
 import { ALL_PLATFORMS } from "@shared/types/platform";
+import { upgradePlatformQuality } from "@shared/utils/platformQuality";
 import { searchSongs } from "@/apis/search";
 import { useLibraryStore } from "@/stores/library";
 import { useDownloadStore } from "@/stores/download";
 import { useSettingsStore } from "@/stores/settings";
-import { QUALITY_LABELS, qualityRank, getQualityLevel } from "@/utils/quality";
-import { findUpgradeMatch, pathDirName, pathExt } from "@/utils/qualityUpgrade";
+import { qualityRank, getQualityLevel } from "@/utils/quality";
+import {
+  findUpgradeMatch,
+  orderUpgradePlatforms,
+  pathDirName,
+  pathExt,
+} from "@/utils/qualityUpgrade";
 import { formatFileSize } from "@/utils/format";
 import { toast } from "@/composables/useToast";
 import QualityTag from "@/components/ui/QualityTag.vue";
@@ -29,24 +35,32 @@ const { t } = useI18n();
 const libraryStore = useLibraryStore();
 const downloadStore = useDownloadStore();
 
-/** 可选目标档位（无损起步；环绕声档无法从本地文件元数据验证，不作为目标） */
+/** 可选目标档位（无损起步；空间/环绕类档无法从本地文件元数据验证，不作为目标） */
 const TARGET_LEVELS: QualityLevel[] = ["lossless", "hi-res", "jymaster"];
-
-const targetOptions = TARGET_LEVELS.map((level) => ({
-  value: level,
-  label: QUALITY_LABELS[level],
-}));
 
 /** 音源选择：单平台或全部平台并发 */
 type SourceChoice = Platform | "all";
-const sourceOptions = [
+
+/** 平台 → 音源下拉文案键 */
+const PLATFORM_LABEL_KEYS: Record<Platform, string> = {
+  netease: "sourceNetease",
+  qqmusic: "sourceQq",
+  kugou: "sourceKugou",
+  kuwo: "sourceKuwo",
+  migu: "sourceMigu",
+};
+
+const sourceOptions = computed<{ value: SourceChoice; label: string }[]>(() => [
   { value: "all", label: t("library.upgrade.sourceAll") },
-  { value: "netease", label: t("library.upgrade.sourceNetease") },
-  { value: "qqmusic", label: t("library.upgrade.sourceQq") },
-  { value: "kugou", label: t("library.upgrade.sourceKugou") },
-  { value: "kuwo", label: t("library.upgrade.sourceKuwo") },
-  { value: "migu", label: t("library.upgrade.sourceMigu") },
-] as { value: SourceChoice; label: string }[];
+  ...ALL_PLATFORMS.map((p) => ({
+    value: p as SourceChoice,
+    label: t(`library.upgrade.${PLATFORM_LABEL_KEYS[p]}`),
+  })),
+]);
+
+/** 平台展示名 */
+const platformLabel = (source: Platform): string =>
+  t(`library.upgrade.${PLATFORM_LABEL_KEYS[source]}`);
 
 const storedSource = localStorage.getItem("upgrade.platform") as SourceChoice | null;
 const platform = ref<SourceChoice>(
@@ -61,6 +75,36 @@ const target = ref<QualityLevel>(
   (localStorage.getItem("upgrade.target") as QualityLevel) ?? "lossless",
 );
 watch(target, (v) => localStorage.setItem("upgrade.target", v));
+
+/** 目标档位选项：全部平台用通用档位名，指定平台时按该平台的具体档位描述展示 */
+const targetOptions = computed(() =>
+  TARGET_LEVELS.map((level) => {
+    const option =
+      platform.value === "all" ? undefined : upgradePlatformQuality(platform.value, level);
+    const unavailable = platform.value !== "all" && !option;
+    return {
+      value: level,
+      label: option
+        ? t(option.labelKey)
+        : unavailable
+          ? `${t(`quality.level.${level}`)} · ${t("quality.selection.unsupported")}`
+          : t(`quality.level.${level}`),
+      disabled: unavailable,
+    };
+  }),
+);
+
+/** 取匹配平台的目标名称，缺档时明确提示不支持
+ * @param source - 候选所属平台
+ * @returns 本地化目标名称
+ */
+const targetLabel = (source: Platform): string => {
+  const option = upgradePlatformQuality(source, target.value);
+  return option ? t(option.labelKey) : t("quality.selection.unsupported");
+};
+const targetUnavailable = computed(
+  () => platform.value !== "all" && !upgradePlatformQuality(platform.value, target.value),
+);
 
 type ItemStatus = "matching" | "matched" | "none";
 
@@ -84,7 +128,9 @@ let scanCanceled = false;
 
 /** 本次扫描启用的平台 */
 const activePlatforms = computed<Platform[]>(() =>
-  platform.value === "all" ? [...ALL_PLATFORMS] : [platform.value],
+  (platform.value === "all" ? [...ALL_PLATFORMS] : [platform.value]).filter(
+    (source) => upgradePlatformQuality(source, target.value) !== undefined,
+  ),
 );
 
 /** 待跟进的升级任务 id（全部收尾后刷新曲库） */
@@ -201,8 +247,10 @@ const markFailure = (platformKey: Platform): void => {
 /**
  * 多平台并发匹配同一首歌，取声明音质最高的一版
  *
- * 竞速采用策略：任一平台命中且声明音质已达目标档位即立即采用（不必等最慢的平台）；
- * 否则等全部返回后取声明音质最高的一版。平台顺序用于同档位时的稳定偏好。
+ * 竞速采用策略：命中声明音质已达目标档位，且优先序更高的平台都已收尾时立即采用
+ * （不必等最慢的平台）；否则等全部返回后按「声明档位最高 → 平台优先序 → 时长差」
+ * 确定性择优。平台优先序：本地文件来源平台最优先，其余按固定平台表，避免同分时
+ * 按请求返回先后取到不稳定的胜者。
  */
 const matchAcrossPlatforms = async (
   local: Track,
@@ -210,6 +258,11 @@ const matchAcrossPlatforms = async (
   const keyword = `${local.title} ${local.artists[0]?.name ?? ""}`.trim();
   const targetRank = qualityRank(target.value);
   const platforms = activePlatforms.value;
+  if (platforms.length === 0) return { track: null, allFailed: false };
+  // 稳定优先序：本地文件来源平台（有可靠解析依据时）最优先
+  const ordered = orderUpgradePlatforms(local, platforms);
+  const priority = new Map(ordered.map((p, idx) => [p, idx]));
+  const settledPlatforms = new Set<Platform>();
   const hits: Track[] = [];
   let failedCountLocal = 0;
   let settled = 0;
@@ -219,7 +272,7 @@ const matchAcrossPlatforms = async (
     resolveRace = resolve;
   });
 
-  const tasks = platforms.map(async (platformKey) => {
+  const tasks = ordered.map(async (platformKey) => {
     try {
       if (platformStates[platformKey].disabled) {
         failedCountLocal++;
@@ -236,7 +289,15 @@ const matchAcrossPlatforms = async (
       const hit = findUpgradeMatch(local, list);
       if (hit) {
         hits.push(hit);
-        if (qualityRank(getQualityLevel(hit.quality)) >= targetRank && !earlyAdopt) {
+        // 更高优先序的平台尚未收尾时不得提前采用，否则会绕过确定性优先序
+        const higherPending = ordered.some(
+          (p) => (priority.get(p) ?? 0) < priority.get(platformKey)! && !settledPlatforms.has(p),
+        );
+        if (
+          qualityRank(getQualityLevel(hit.quality)) >= targetRank &&
+          !higherPending &&
+          !earlyAdopt
+        ) {
           earlyAdopt = hit;
           resolveRace?.();
         }
@@ -245,6 +306,7 @@ const matchAcrossPlatforms = async (
       markFailure(platformKey);
       failedCountLocal++;
     } finally {
+      settledPlatforms.add(platformKey);
       settled++;
       if (settled >= platforms.length) resolveRace?.();
     }
@@ -260,13 +322,19 @@ const matchAcrossPlatforms = async (
       allFailed: platforms.length > 0 && failedCountLocal === platforms.length,
     };
   }
-  // 声明的可用音质越高越优先；同档位按到达顺序取稳定结果
-  let best = hits[0];
-  for (const hit of hits.slice(1)) {
-    const bestRank = qualityRank(getQualityLevel(best.quality));
-    const hitRank = qualityRank(getQualityLevel(hit.quality));
-    if (hitRank > bestRank) best = hit;
-  }
+  // 声明档位最高 → 平台优先序 → 时长差，全部收尾后确定性择优
+  const durationDelta = (track: Track): number =>
+    local.duration > 0 ? Math.abs(local.duration - track.duration) : 0;
+  const best = hits
+    .map((track) => ({
+      track,
+      rank: qualityRank(getQualityLevel(track.quality)),
+      prio: priority.get(track.source as Platform) ?? ordered.length,
+    }))
+    .sort(
+      (a, b) =>
+        b.rank - a.rank || a.prio - b.prio || durationDelta(a.track) - durationDelta(b.track),
+    )[0]!.track;
   return { track: best, allFailed: false };
 };
 
@@ -305,7 +373,7 @@ const percent = computed(() =>
 
 /** 开始检测：多平台并发 + 每平台独立节奏门/熔断；中止/停止后可续检（保留已完成结果） */
 const startScan = async (resume = false): Promise<void> => {
-  if (phase.value === "scanning") return;
+  if (phase.value === "scanning" || targetUnavailable.value) return;
   const key = `${platform.value}:${target.value}`;
   scanCanceled = false;
   aborted.value = false;
@@ -362,7 +430,7 @@ const startScan = async (resume = false): Promise<void> => {
       }
       scanned.value++;
       // 所有平台都被熔断停用：提前收尾
-      if (ALL_PLATFORMS.every((platformKey) => platformStates[platformKey].disabled)) {
+      if (activePlatforms.value.every((platformKey) => platformStates[platformKey].disabled)) {
         scanCanceled = true;
         aborted.value = true;
       }
@@ -387,10 +455,13 @@ const toggleAll = (): void => {
 const buildRequest = (item: UpgradeItem): DownloadRequest => {
   const download = useSettingsStore().system.download;
   const online = item.matched!;
+  const source = online.source as Platform;
   return {
     taskId: crypto.randomUUID(),
     track: online,
     qualityLevel: target.value,
+    // 平台具体目标（如 netease:hires），主进程按它做严格档位校验；全局下载默认设置不适用于升级
+    qualitySelection: upgradePlatformQuality(source, target.value)?.id,
     coverUrl: online.coverOriginal ?? online.cover,
     tagOptions: {
       embedCover: download.embedCover,
@@ -402,15 +473,23 @@ const buildRequest = (item: UpgradeItem): DownloadRequest => {
     lyricFileFormat: download.lyricFileFormat,
     targetDir: pathDirName(item.local.path!),
     replaceSourcePath: item.local.path!,
+    // 替换下限显式取目标档位：原文件探测不到档位（已损坏）时也强制要求目标规格
+    minLevel: target.value,
   };
 };
 
 /** 入队升级下载 */
 const startUpgrade = async (): Promise<void> => {
+  if (targetUnavailable.value || !keyMatch.value) return;
   const seen = new Set<string>();
   const requests: DownloadRequest[] = [];
   for (const item of matchedItems.value) {
-    if (!item.checked || !item.matched) continue;
+    if (
+      !item.checked ||
+      !item.matched ||
+      !upgradePlatformQuality(item.matched.source as Platform, target.value)
+    )
+      continue;
     const key = `${item.matched.source}:${item.matched.id}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -493,16 +572,16 @@ watch(
       <!-- 控制行 -->
       <div class="flex items-center gap-2">
         <div class="w-32 shrink-0">
-          <SSelect v-model="target" :options="targetOptions" />
+          <SSelect v-model="target" :options="targetOptions" :disabled="phase === 'scanning'" />
         </div>
         <div class="w-32 shrink-0">
-          <SSelect v-model="platform" :options="sourceOptions" />
+          <SSelect v-model="platform" :options="sourceOptions" :disabled="phase === 'scanning'" />
         </div>
         <SButton
           type="primary"
           variant="secondary"
           class="shrink-0"
-          :disabled="phase === 'scanning' || libraryStore.tracks.length === 0"
+          :disabled="phase === 'scanning' || libraryStore.tracks.length === 0 || targetUnavailable"
           @click="startScan(canResume)"
         >
           {{ scanButtonLabel }}
@@ -516,7 +595,7 @@ watch(
       </div>
       <!-- 提示 -->
       <div class="text-xs text-on-surface-variant/50 leading-relaxed">
-        {{ t("library.upgrade.hint") }}
+        {{ targetUnavailable ? t("quality.selection.unsupported") : t("library.upgrade.hint") }}
       </div>
       <!-- 检测进度 -->
       <div
@@ -573,9 +652,23 @@ watch(
             </div>
           </div>
           <template v-if="item.status === 'matched'">
-            <QualityTag :level="getQualityLevel(item.local.quality)" />
+            <QualityTag
+              :quality="item.local.quality"
+              :provenance="item.local.qualityProvenance"
+              :measured="true"
+            />
             <IconLucideArrowRight class="size-3 text-on-surface-variant/40 shrink-0" />
-            <QualityTag :level="target" />
+            <span
+              class="text-xs text-on-surface-variant shrink-0 whitespace-nowrap"
+              :title="targetLabel(item.matched!.source as Platform)"
+            >
+              {{
+                t("quality.selection.matchedTarget", {
+                  platform: platformLabel(item.matched!.source as Platform),
+                  quality: targetLabel(item.matched!.source as Platform),
+                })
+              }}
+            </span>
           </template>
           <span
             v-else-if="item.status === 'none'"
@@ -603,7 +696,7 @@ watch(
           <SButton variant="tertiary" @click="close">{{ t("common.cancel") }}</SButton>
           <SButton
             type="primary"
-            :disabled="checkedCount === 0 || phase === 'scanning'"
+            :disabled="checkedCount === 0 || phase === 'scanning' || targetUnavailable || !keyMatch"
             @click="startUpgrade"
           >
             {{ t("library.upgrade.upgradeBtn", { count: checkedCount }) }}

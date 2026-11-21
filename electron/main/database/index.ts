@@ -96,7 +96,8 @@ export const initDatabase = (): void => {
       size INTEGER NOT NULL,
       mime TEXT,
       cached_at INTEGER NOT NULL,
-      last_used_at INTEGER NOT NULL
+      last_used_at INTEGER NOT NULL,
+      quality_provenance TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_song_cache_last_used ON song_cache(last_used_at);
     CREATE INDEX IF NOT EXISTS idx_song_cache_source ON song_cache(source);
@@ -126,6 +127,7 @@ export const initDatabase = (): void => {
       task_id TEXT PRIMARY KEY,
       track_json TEXT NOT NULL,
       quality_level TEXT NOT NULL,
+      quality_selection TEXT,
       status TEXT NOT NULL,
       received INTEGER NOT NULL DEFAULT 0,
       total INTEGER NOT NULL DEFAULT 0,
@@ -139,6 +141,9 @@ export const initDatabase = (): void => {
     CREATE INDEX IF NOT EXISTS idx_download_tasks_created ON download_tasks(created_at);
     CREATE INDEX IF NOT EXISTS idx_download_tasks_completed_track
       ON download_tasks(json_extract(track_json, '$.source'), json_extract(track_json, '$.id'))
+      WHERE status = 'done' AND file_path IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_download_tasks_done_path
+      ON download_tasks(file_path, finished_at)
       WHERE status = 'done' AND file_path IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS playlists (

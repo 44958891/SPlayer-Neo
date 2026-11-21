@@ -18,10 +18,19 @@ import type {
   PluginUpdateInfo,
   SourceCapability,
 } from "@shared/types/plugin";
+// 运行时依赖走相对路径：node:test/tsx（test:node）不解析根 tsconfig 的 paths 别名，
+// 类型导入（上方 @shared/types）编译期剥除不受影响
+import { findPlatformQuality } from "../../../shared/utils/platformQuality";
 
 /**
  * lx 原生音质枚举 → 宿主 PluginQuality 的映射
- * 兼容 128k/320k/flac/flac24bit 以及各类别名、环绕/母带档（atmos/master）
+ * 兼容 128k/192k/320k/flac/flac24bit 以及各类别名、环绕/母带档（atmos/master）
+ *
+ * 本轮 29 档为 EM 实测 raw 全集（nac/dts/excellent 未支持，刻意不收录，不做猜测映射）：
+ * kw 128k/320k/flac/master；kg 增 hires/atmos；tx 增 atmos_plus；wy 增 192k/jyeffect/sky；mg 增 hires
+ * - atmos（QQ 平原全景声 qqmusic:qq-spatial）与 atmos_plus（全景声 2.0 qqmusic:qq-spatial-2.0）
+ *   同落宿主 sky，但具体选择 ID 与请求原档严格区分、互不替代
+ * - master 落宿主 jymaster；通用 master 候选可以请求，但回执 master 仅证明母带品牌档，不证明母带 4.0
  */
 const LX_TO_HOST_QUALITY: Record<string, PluginQuality> = {
   "128k": "lq",
@@ -48,6 +57,8 @@ const LX_TO_HOST_QUALITY: Record<string, PluginQuality> = {
   jyeffect: "jyeffect",
   surround: "jyeffect",
   master: "jymaster",
+  "qq-master-4.0": "jymaster",
+  "臻品母带4.0": "jymaster",
   jymaster: "jymaster",
 };
 
@@ -84,7 +95,18 @@ const HOST_TO_LX_QUALITY: Record<PluginQuality, string> = {
 
 /** 宿主档位 → 候选 lx 音质字符串（优先级从高到低，含降档链） */
 const HOST_TO_LX_CANDIDATES: Record<PluginQuality, readonly string[]> = {
-  jymaster: ["master", "jymaster", "hires", "flac24bit", "flac", "320k", "192k", "128k"],
+  jymaster: [
+    "qq-master-4.0",
+    "臻品母带4.0",
+    "master",
+    "jymaster",
+    "hires",
+    "flac24bit",
+    "flac",
+    "320k",
+    "192k",
+    "128k",
+  ],
   sky: ["sky", "atmos", "atmos_plus", "hires", "flac24bit", "flac", "320k", "192k", "128k"],
   jyeffect: [
     "jyeffect",
@@ -106,6 +128,60 @@ const HOST_TO_LX_CANDIDATES: Record<PluginQuality, readonly string[]> = {
 
 export const mapLxQualityToHost = (q: string): PluginQuality | null =>
   LX_TO_HOST_QUALITY[String(q).toLowerCase()] ?? null;
+
+/**
+ * 校验脚本回包里的来源键，只保留安全的短标识（wy / kg / kugou 等）
+ * @param value - 脚本回包中的来源字段
+ * @returns 规范化的小写来源键，非法或缺省返回 undefined
+ */
+const sanitizeSourceKey = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  const key = value.trim().toLowerCase();
+  return /^[a-z0-9_-]{1,32}$/.test(key) ? key : undefined;
+};
+
+/**
+ * 校验脚本回包里的原生档位文本，只保留安全的短字符串
+ * @param value - 脚本回包中的档位字段
+ * @returns 去除首尾空白后的档位文本，非法或缺省返回 undefined
+ */
+const sanitizeNativeTier = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  const tier = value.trim();
+  return tier && tier.length <= 96 ? tier : undefined;
+};
+
+/** gzPlayback 回执协议的白名单版本，其余版本声明一律不采信 */
+const GZ_EVIDENCE_VERSION = 1;
+/** 回执能力登记的源数量上限，防止异常声明撑爆 per-source 表 */
+const MAX_GZ_SOURCES = 64;
+/** 单源别名条目上限 */
+const MAX_GZ_ALIASES = 32;
+
+/**
+ * 校验别名与档位标识文本，只保留安全短字符串（小写字母数字与 ._-）
+ * @param value - 脚本声明的档位/别名文本
+ * @returns 规范化的小写标识，非法返回 undefined
+ */
+const sanitizeQualityToken = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  const token = value.trim().toLowerCase();
+  return /^[a-z0-9._-]{1,32}$/.test(token) ? token : undefined;
+};
+
+/**
+ * 解析对象回包根部的 gzPlayback v1 回执
+ * 版本不在白名单或缺实际档位文本时视为无回执，请求保持"未确认"状态
+ * @param value - 回包里的 gzPlayback 字段
+ * @returns 合法回执返回实际档位文本，其余返回 null
+ */
+const parseGzReceipt = (value: unknown): { quality: string } | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const obj = value as Record<string, unknown>;
+  if (obj.version !== GZ_EVIDENCE_VERSION) return null;
+  const quality = sanitizeNativeTier(obj.quality);
+  return quality ? { quality } : null;
+};
 
 const mapHostQualityToLx = (q: PluginQuality): string => HOST_TO_LX_QUALITY[q] ?? "320k";
 
@@ -398,6 +474,10 @@ export const installLxShim = (
   let updateAlerted = false;
   /** 各源在 inited 里声明的 lx 音质字符串（小写），请求时用于挑选插件真正支持的档位 */
   const declaredQualitys = new Map<string, Set<string>>();
+  /** 各源声明的 gzPlayback 回执协议版本，仅白名单版本入表 */
+  const gzEvidenceVersions = new Map<string, number>();
+  /** 各源声明的请求档位别名：key 为宿主候选原档，value 为脚本实际接受的原档（均小写） */
+  const gzAliases = new Map<string, Map<string, string>>();
 
   const lxApi = {
     EVENT_NAMES,
@@ -541,13 +621,34 @@ export const installLxShim = (
                   actions?: string[];
                   qualitys?: string[];
                   qualities?: string[];
+                  gzQualityEvidenceVersion?: unknown;
+                  gzQualityAliases?: unknown;
                   [key: string]: unknown;
                 }
               >) ?? {};
             const normalized: Record<string, SourceCapability> = {};
             for (const [key, cap] of Object.entries(rawSources)) {
               const rawQualities = cap.qualitys ?? cap.qualities ?? [];
-              declaredQualitys.set(key, new Set(rawQualities.map((q) => String(q).toLowerCase())));
+              const lowered = rawQualities.map((q) => String(q).toLowerCase());
+              declaredQualitys.set(key, new Set(lowered));
+              // 回执协议能力：版本白名单外的声明与别名一律不采信，别名只保留安全短字符串
+              if (
+                cap.gzQualityEvidenceVersion === GZ_EVIDENCE_VERSION &&
+                gzEvidenceVersions.size < MAX_GZ_SOURCES
+              ) {
+                gzEvidenceVersions.set(key, GZ_EVIDENCE_VERSION);
+                const rawAliases = cap.gzQualityAliases;
+                if (rawAliases && typeof rawAliases === "object" && !Array.isArray(rawAliases)) {
+                  const safe = new Map<string, string>();
+                  for (const [from, to] of Object.entries(rawAliases)) {
+                    if (safe.size >= MAX_GZ_ALIASES) break;
+                    const fromKey = sanitizeQualityToken(from);
+                    const toKey = sanitizeQualityToken(to);
+                    if (fromKey && toKey) safe.set(fromKey, toKey);
+                  }
+                  if (safe.size > 0) gzAliases.set(key, safe);
+                }
+              }
               const mapped = new Set<PluginQuality>();
               for (const q of rawQualities) {
                 const host = mapLxQualityToHost(q);
@@ -559,10 +660,19 @@ export const installLxShim = (
               // 不支持任何宿主已识别动作的源直接丢弃，避免 audioSource 误把
               // lyric-only 脚本当成 musicUrl 候选去调，结果走到归一校验抛 PLUGIN_INVALID_RESULT
               if (actions.length === 0) continue;
+              // 保留脚本声明的原始档位（小写），供具体平台音质选择按原档精确匹配；
+              // 回执能力与别名同步进公开能力表，供下游溯源按版本协议解释响应
               normalized[key] = {
                 name: cap.name ?? key,
                 actions,
                 qualities: Array.from(mapped),
+                ...(lowered.length ? { nativeQualities: Array.from(new Set(lowered)) } : {}),
+                ...(gzEvidenceVersions.has(key)
+                  ? { gzQualityEvidenceVersion: GZ_EVIDENCE_VERSION }
+                  : {}),
+                ...(gzAliases.has(key)
+                  ? { gzQualityAliases: Object.fromEntries(gzAliases.get(key)!) }
+                  : {}),
               };
             }
             onSources(normalized);
@@ -624,30 +734,114 @@ export const installLxShim = (
       }
       const reqObj = req as MusicUrlReq;
       const source = reqObj.source ?? "";
+      const hostQuality = reqObj.quality;
+      const declared = declaredQualitys.get(source);
+      const gzVersion = gzEvidenceVersions.get(source);
+      const aliases = gzAliases.get(source);
+      // 具体平台音质选择：只在脚本声明里能对上候选原档时精确请求（info.type 收到原档字符串）；
+      // 声明非空却对不上时全档位显式报错，不做逐级降档冒充（臻品/全景声/母带等同理）；
+      // 未声明 qualitys 的老脚本维持旧链为物理档兜底，品牌档（requiresDeclaration）仍报错
+      const selection =
+        typeof reqObj.qualitySelection === "string" && reqObj.qualitySelection
+          ? findPlatformQuality(reqObj.qualitySelection)
+          : undefined;
+      if (reqObj.qualitySelection && !selection) {
+        throw Object.assign(new Error("quality selection is no longer supported"), {
+          code: "QUALITY_SELECTION_UNSUPPORTED",
+        });
+      }
+      let picked: { lx: string; host: PluginQuality } | null = null;
+      if (selection) {
+        const exact = declared
+          ? selection.lxCandidates.find((candidate) => declared.has(candidate.toLowerCase()))
+          : undefined;
+        if (exact) {
+          picked = { lx: exact, host: selection.level };
+        } else if ((declared && declared.size > 0) || selection.requiresDeclaration) {
+          throw Object.assign(
+            new Error(`quality selection ${selection.id} is not declared by source ${source}`),
+            { code: "QUALITY_SELECTION_UNSUPPORTED" },
+          );
+        }
+      }
       // lx 期待 128k/320k/flac/... 音质字符串，宿主的 quality 做一次翻译；
       // 脚本声明了 qualitys 时按声明选它支持的档位（例如母带档翻译成 master 而不是 flac24bit）
-      const hostQuality = reqObj.quality;
-      const picked = hostQuality ? pickLxQuality(hostQuality, declaredQualitys.get(source)) : null;
+      if (!picked && hostQuality) picked = pickLxQuality(hostQuality, declared);
+      // 别名只作用于脚本声明过的键：把候选原档换成脚本实际接受的同义档
+      if (picked && aliases) {
+        const aliased = aliases.get(picked.lx);
+        if (aliased) picked = { ...picked, lx: aliased };
+      }
       const lxType = picked?.lx ?? (hostQuality ? mapHostQualityToLx(hostQuality) : undefined);
       const effectiveQuality = picked?.host;
+      // 回执信封只发给声明过 v1 的源；带显式选择时 strictQuality 置真，
+      // 源在对不上档位时回 409 GZ_QUALITY_DIFFERENT；通用请求 strict 为假，仅收集证据
       const info = {
         type: lxType,
         musicInfo: normalizeLxMusicInfo(reqObj.musicInfo, source),
+        ...(gzVersion === GZ_EVIDENCE_VERSION
+          ? { gzPlayback: { version: GZ_EVIDENCE_VERSION, strictQuality: Boolean(selection) } }
+          : {}),
       };
       const raw = await Promise.resolve(requestHandler({ source, action, info }));
-      // 严格归一为 { url, quality }，避免脚本回包夹带闭包/Proxy 导致 postMessage 克隆失败
+      const requestedSelection =
+        typeof reqObj.qualitySelection === "string" && reqObj.qualitySelection
+          ? reqObj.qualitySelection
+          : undefined;
+      // 字符串回包只是请求回显：quality 取请求换算档位，requestedTier 记录请求的 lx 档位，
+      // 不虚构实际来源与响应原生档位
       if (typeof raw === "string") {
         return {
           url: raw,
           ...(effectiveQuality ? { quality: effectiveQuality } : {}),
+          ...(lxType ? { requestedTier: lxType } : {}),
+          ...(requestedSelection ? { requestedSelection } : {}),
         } as MusicUrlRes;
       }
       if (raw && typeof raw === "object") {
-        const url = (raw as Record<string, unknown>).url;
+        const rawObj = raw as Record<string, unknown>;
+        const url = rawObj.url;
         if (typeof url === "string") {
+          // 实际来源仅接受响应显式回传；与请求来源相同的 source 字段视为回显，不作证据
+          const echoedSource = sanitizeSourceKey(rawObj.source);
+          const actualSource =
+            sanitizeSourceKey(rawObj.actualSource) ??
+            sanitizeSourceKey(rawObj.platform) ??
+            (echoedSource && echoedSource !== source ? echoedSource : undefined);
+          // v1 回执：仅声明过能力的源 + 回执版本合法时才采信实际档位；
+          // 档位无法识别时不回写请求档位，nativeTier 保留源回传的原始文本
+          const receipt =
+            gzVersion === GZ_EVIDENCE_VERSION ? parseGzReceipt(rawObj.gzPlayback) : null;
+          if (receipt) {
+            const receiptHost = mapLxQualityToHost(receipt.quality);
+            return {
+              url,
+              ...(receiptHost ? { quality: receiptHost } : {}),
+              ...(lxType ? { requestedTier: lxType } : {}),
+              ...(requestedSelection ? { requestedSelection } : {}),
+              ...(actualSource ? { actualSource } : {}),
+              nativeTier: receipt.quality,
+              sourceEvidence: "gzPlayback-v1",
+            } as MusicUrlRes;
+          }
+          // 无有效回执：响应视为未确认，quality 维持请求换算值，不带 sourceEvidence
+          let nativeTier = sanitizeNativeTier(rawObj.nativeTier);
+          const responseQuality =
+            typeof rawObj.quality === "string" ? mapLxQualityToHost(rawObj.quality) : null;
+          if (
+            !nativeTier &&
+            typeof rawObj.quality === "string" &&
+            /^\d{2,8}$/.test(rawObj.quality.trim())
+          ) {
+            nativeTier = rawObj.quality.trim();
+          }
           return {
             url,
-            ...(effectiveQuality ? { quality: effectiveQuality } : {}),
+            quality: responseQuality ?? effectiveQuality,
+            ...(lxType ? { requestedTier: lxType } : {}),
+            ...(requestedSelection ? { requestedSelection } : {}),
+            ...(actualSource ? { actualSource } : {}),
+            ...(nativeTier ? { nativeTier } : {}),
           } as MusicUrlRes;
         }
       }

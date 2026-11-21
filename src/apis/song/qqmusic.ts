@@ -1,16 +1,25 @@
 import type { Track } from "@shared/types/player";
 import { ErrorCode } from "@shared/types/errors";
+import type { QualityProvenance } from "@shared/types/quality";
 import type { QualityLevel } from "@/utils/quality";
 import { qqmusicCall } from "@/apis/qqmusic";
 
 export type QQMusicPlayUrlResult =
-  | { available: true; url: string; isTrial: boolean; level?: QualityLevel }
+  | {
+      available: true;
+      url: string;
+      isTrial: boolean;
+      level?: QualityLevel;
+      qualityProvenance?: QualityProvenance;
+    }
   | { available: false; errorCode: ErrorCode };
 
 interface SongUrlData {
   id: string;
   url: string;
   level?: string;
+  /** 主进程命中的候选模板文件名前缀（如 Q000 / RS01 / F000） */
+  nativeTier?: string;
   format?: string;
   isFallback?: boolean;
 }
@@ -56,11 +65,21 @@ export const resolveQQMusicUrl = async (
     if (item?.url) {
       const level =
         item.level && QQ_LEVELS.has(item.level) ? (item.level as QualityLevel) : undefined;
+      // 档位依据是服务端接受的候选模板文件名前缀（文件名证据）；
+      // Q000 / RS01 属临时声明，未经文件实测证实，原生档位保留前缀原文
+      const qualityProvenance: QualityProvenance = {
+        provider: "official",
+        platform: "qqmusic",
+        evidence: "filename",
+        ...(item.nativeTier ? { nativeTier: item.nativeTier } : {}),
+        ...(level ? { level } : {}),
+      };
       return {
         available: true,
         url: item.url,
         isTrial: false,
         level,
+        qualityProvenance,
       };
     }
 

@@ -1,7 +1,19 @@
 import type { Track, TrackSource } from "@shared/types/player";
 import type { Platform } from "@shared/types/platform";
 import type { PluginQuality } from "@shared/types/plugin";
+import type { DownloadTrackIdentity } from "@shared/types/download";
+import type {
+  PlatformQualityOption,
+  QualityProvenance,
+  ResolvedAudioFile,
+} from "@shared/types/quality";
 import { buildHealthKey, isTimeoutMessage, type PluginHealthEntry } from "@shared/utils/audioProbe";
+import {
+  findPlatformQuality,
+  normalizeStoredQualitySelection,
+  resolvePlatformQuality,
+} from "@shared/utils/platformQuality";
+import { provenanceFromPlugin, validateQualityProvenance } from "@shared/utils/qualityProvenance";
 import { qualityMeets, qualityRank, type QualityLevel } from "@/utils/quality";
 import { streamingSourceForTrack } from "@shared/utils/streamingSource";
 import { useSettingsStore } from "@/stores/settings";
@@ -56,15 +68,46 @@ const invalidateHealthCache = (): void => {
 export interface ResolveTrackSourceOptions {
   /** 已下载文件加载失败时跳过，继续解析缓存或在线音源 */
   skipDownloaded?: boolean;
+  /** 显式重取链时跳过歌曲缓存读取；缓存写入（cacheRequest）不受影响 */
+  skipCache?: boolean;
   /** 将解析失败原因交给播放流程，供提示和跳曲决策使用 */
   onError?: (error: string) => void;
   /** 要跳过的插件 ID 列表 */
   skipPluginIds?: readonly string[];
   /** 是否跳过官方在线接口，直接进入插件兜底 */
   skipOfficialOnline?: boolean;
+  /** 用户保存的具体平台音质选择标识；缺省回读设置，未保存时保持通用档位请求 */
+  qualitySelection?: string;
   /** 是否静默解析 */
   silent?: boolean;
 }
+
+/**
+ * 解析当前曲目的具体音质选择（仅显式提供或设置里保存过时生效）
+ * @param track - 要解析的 track，选择按其平台约束解析
+ * @param songLevel - 历史全局音质等级，用于跨平台时按音质意图映射
+ * @param selection - 调用方显式传入或设置保存的选择标识
+ * @returns 该平台的目标选项；QQ 空间目标按独立档位请求，其余通用请求沿用旧行为
+ */
+const resolveSelectionOption = (
+  track: Track,
+  songLevel: QualityLevel,
+  selection: string | undefined,
+): PlatformQualityOption | undefined => {
+  if (!isOnlinePlatform(track.source)) return undefined;
+  if (!selection && !(track.source === "qqmusic" && songLevel === "sky")) return undefined;
+  return resolvePlatformQuality(track.source, songLevel, selection);
+};
+
+/**
+ * 校验跨进程读回的文件及其来源信息，剔除非法字段
+ * @param file - IPC 回传的已存在音频文件
+ * @returns 来源信息经过校验的文件，空文件返回 undefined
+ */
+const validatedAudioFile = (file: ResolvedAudioFile | null): ResolvedAudioFile | undefined => {
+  if (!file?.path) return undefined;
+  return { ...file, qualityProvenance: validateQualityProvenance(file.qualityProvenance) };
+};
 
 /**
  * 检查给定 source 是否为在线平台
@@ -79,20 +122,27 @@ const isOnlinePlatform = (source: TrackSource): source is Platform =>
 
 /**
  * 派生缓存键
- * netease / qqmusic 把音质档位并入键，使不同音质的同一首歌互不覆盖
+ * netease / qqmusic 把音质档位并入键，使不同音质的同一首歌互不覆盖；
+ * 有具体平台音质选择时以选项 id 并入键，同档位的臻品音质与全景声互不覆盖
  * @param track - 要解析的 track
  * @param songLevel - 在线歌曲音质档位
+ * @param selectionId - 当前平台的具体音质选择标识；缺省保持旧键格式
  * @returns 派生缓存键，如果该 track 不参与歌曲缓存则返回 null
  */
-const cacheKeyForTrack = (track: Track, songLevel: QualityLevel): string | null => {
+const cacheKeyForTrack = (
+  track: Track,
+  songLevel: QualityLevel,
+  selectionId?: string,
+): string | null => {
+  const tier = selectionId ?? songLevel;
   if (track.source === "streaming" && track.serverId && track.originalId) {
     return `s:${track.serverId}:${track.originalId}:`;
   }
   if (track.source === "kugou" && track.id) {
-    return `o:kugou:${track.id}:${track.extId ?? ""}:${songLevel}`;
+    return `o:kugou:${track.id}:${track.extId ?? ""}:${tier}`;
   }
   if (isOnlinePlatform(track.source) && track.id) {
-    return `o:${track.source}:${track.id}:${songLevel}`;
+    return `o:${track.source}:${track.id}:${tier}`;
   }
   return null;
 };
@@ -107,6 +157,8 @@ export type OnlineResolveResult =
       pluginId?: string;
       /** 解析确认（官方接口下发档位 / 插件实际请求档位）的音质等级 */
       level?: QualityLevel;
+      /** 本次取链的音质来源证据；官方通道来自响应/文件名/请求，插件通道由回包形态决定 */
+      qualityProvenance?: QualityProvenance;
       /** 预探针实测的完整文件体积（字节）；未探测或未知时缺省 */
       sizeBytes?: number;
     }
@@ -116,12 +168,15 @@ export type OnlineResolveResult =
  * 经插件解析在线音频源 URL
  * @param track - 要解析的 track
  * @param quality - 音质档位（由调用方传入，默认 hq）
+ * @param skipPluginIds - 要跳过的插件 ID
+ * @param qualitySelection - 当前平台的具体音质选择标识；独立插件曲目保持通用请求
  * @returns 解析结果，失败时带原因码
  */
 export const resolveByPlugin = async (
   track: Track,
   quality: QualityLevel = "hq",
   skipPluginIds: readonly string[] = [],
+  qualitySelection?: string,
 ): Promise<OnlineResolveResult> => {
   const fail = (errorCode: ErrorCode): OnlineResolveResult => ({ ok: false, errorCode });
   const plugins = usePluginsStore();
@@ -154,7 +209,15 @@ export const resolveByPlugin = async (
         return fail(ErrorCode.NO_PLUGIN_AVAILABLE);
       }
       return res?.url
-        ? { ok: true, url: res.url, isTrial: false, provider: "plugin", pluginId: origin.pluginId }
+        ? {
+            ok: true,
+            url: res.url,
+            isTrial: false,
+            provider: "plugin",
+            pluginId: origin.pluginId,
+            level: res.quality,
+            qualityProvenance: provenanceFromPlugin(res, origin.pluginId, origin.source),
+          }
         : fail(ErrorCode.URL_RESOLVE_FAILED);
     } catch (err) {
       console.warn("[plugin] resolveUrl failed", origin.pluginId, err);
@@ -216,6 +279,7 @@ export const resolveByPlugin = async (
         pluginId: plugin.manifest.id,
         source: pluginSource,
         quality,
+        ...(qualitySelection ? { qualitySelection } : {}),
         musicInfo,
       });
       if (res?.url) {
@@ -226,6 +290,7 @@ export const resolveByPlugin = async (
           provider: "plugin",
           pluginId: plugin.manifest.id,
           level: res.quality,
+          qualityProvenance: provenanceFromPlugin(res, plugin.manifest.id, pluginSource),
         };
       }
     } catch (err) {
@@ -252,12 +317,14 @@ export const resolveByPlugin = async (
  * @param quality - 音质档位
  * @param skipPluginIds - 要跳过的插件 ID
  * @param probe - 是否启用 URL 预探针（下载/升级场景建议开启；播放场景可关）
+ * @param qualitySelection - 当前平台的具体音质选择标识，随请求透传给插件
  */
 export const resolveByPluginBest = async (
   track: Track,
   quality: QualityLevel = "hq",
   skipPluginIds: readonly string[] = [],
   probe = false,
+  qualitySelection?: string,
 ): Promise<OnlineResolveResult> => {
   const fail = (errorCode: ErrorCode): OnlineResolveResult => ({ ok: false, errorCode });
   if (!isOnlinePlatform(track.source)) return fail(ErrorCode.URL_RESOLVE_FAILED);
@@ -286,7 +353,7 @@ export const resolveByPluginBest = async (
           info.manifest.id,
           info.manifest.hash,
           pluginSource,
-          quality,
+          qualitySelection ?? quality,
           trackKey,
         );
         healthKeys.set(info.manifest.id, key);
@@ -360,19 +427,35 @@ export const resolveByPluginBest = async (
   /** 取链（首次 8s，超时后带 25s 重试一次） */
   const resolveOnce = async (
     plugin: (typeof candidates)[number],
-  ): Promise<{ url: string; level?: PluginQuality; softTimeout: boolean } | { error: string }> => {
+  ): Promise<
+    | {
+        url: string;
+        level?: PluginQuality;
+        provenance: QualityProvenance;
+        softTimeout: boolean;
+      }
+    | { error: string }
+  > => {
     const attempt = async (
       timeoutMs: number,
-    ): Promise<{ url: string; level?: PluginQuality } | { error: string }> => {
+    ): Promise<
+      { url: string; level?: PluginQuality; provenance: QualityProvenance } | { error: string }
+    > => {
       try {
         const res = await window.api.plugins.resolveUrl({
           pluginId: plugin.manifest.id,
           source: pluginSource,
           quality,
+          ...(qualitySelection ? { qualitySelection } : {}),
           musicInfo,
           timeoutMs,
         });
-        if (res?.url) return { url: res.url, level: res.quality };
+        if (res?.url)
+          return {
+            url: res.url,
+            level: res.quality,
+            provenance: provenanceFromPlugin(res, plugin.manifest.id, pluginSource),
+          };
         return { error: "返回空链接" };
       } catch (err) {
         return { error: err instanceof Error ? err.message : String(err) };
@@ -404,6 +487,7 @@ export const resolveByPluginBest = async (
         url: res.url,
         pluginId: plugin.manifest.id,
         level: res.level,
+        provenance: res.provenance,
         softTimeout: res.softTimeout,
       };
     }),
@@ -416,7 +500,31 @@ export const resolveByPluginBest = async (
     const rankB = b.level ? qualityRank(b.level) : -1;
     return rankB - rankA;
   });
-  let best = hits[0];
+  /** 显式选择下参与采用的候选池；已知低于物理下限的回执不再冒充成功 */
+  let pool = hits;
+  const explicitOption = qualitySelection ? findPlatformQuality(qualitySelection) : undefined;
+  if (explicitOption) {
+    // 与共享校验同一物理下限口径：品牌档看最低规格，空间等声明类专档不做档位排名
+    const physicalFloor =
+      explicitOption.minimumLevel ??
+      (explicitOption.requiresDeclaration
+        ? explicitOption.family === "premium"
+          ? "hi-res"
+          : undefined
+        : explicitOption.level);
+    if (physicalFloor) {
+      const floorRank = qualityRank(physicalFloor);
+      const knownLower = hits.filter(
+        (hit) =>
+          hit.provenance.evidence === "plugin" &&
+          hit.level !== undefined &&
+          qualityRank(hit.level) < floorRank,
+      );
+      // 仍有非已知降档候选时不采用已知降档回执，交由其余候选或上层换源兜底
+      if (knownLower.length < hits.length) pool = hits.filter((hit) => !knownLower.includes(hit));
+    }
+  }
+  let best = pool[0];
   /** 探针实测体积（随接受结果带出，供下载进度兜底） */
   let bestSize: number | undefined;
 
@@ -425,7 +533,7 @@ export const resolveByPluginBest = async (
     let accepted = false;
     let probedResponses = 0;
     let hardRejected = 0;
-    for (const hit of hits) {
+    for (const hit of pool) {
       const result = await window.api.plugins
         .probeUrl({ url: hit.url, durationSec: totalSec })
         .catch(() => null);
@@ -447,7 +555,7 @@ export const resolveByPluginBest = async (
       console.warn("[plugin] 探针拒绝", hit.pluginId, result.message);
     }
     // 每个候选都拿到响应且全为硬失败 → 判定取链失败（避免把试听片段交给下载器）
-    if (!accepted && probedResponses === hits.length && hardRejected === hits.length) {
+    if (!accepted && probedResponses === pool.length && hardRejected === pool.length) {
       return fail(ErrorCode.SOURCE_PROBE_REJECTED);
     }
   }
@@ -459,6 +567,7 @@ export const resolveByPluginBest = async (
     provider: "plugin",
     pluginId: best.pluginId,
     level: best.level,
+    qualityProvenance: best.provenance,
     sizeBytes: bestSize,
   };
 };
@@ -468,8 +577,11 @@ export const resolveByPluginBest = async (
  *
  * 官方接口返回的实际档位低于请求档位（接口静默降档 / 平台本身没有该档位）时，
  * 先让插件尝试拿到更高档位，插件失败再回落到官方降档直链；官方已达标则直接采用。
+ * 有具体音质选择时按目录描述决定官方通道是否可用：官方不支持的臻品 / 全景声等
+ * 专档直接走插件，避免官方同档位的其他品牌档（如全景声选择拿到臻品音质）冒名顶替。
  * @param track - 要解析的 track
  * @param songLevel - 在线歌曲音质档位（仅内置官方接口生效）
+ * @param options - 解析选项；qualitySelection 为具体平台音质选择标识
  */
 const resolveOnlineUrl = async (
   track: Track,
@@ -477,11 +589,17 @@ const resolveOnlineUrl = async (
   options: ResolveTrackSourceOptions = {},
 ): Promise<OnlineResolveResult> => {
   const settings = useSettingsStore();
+  const selectionOption = resolveSelectionOption(track, songLevel, options.qualitySelection);
+  const officialAllowed = selectionOption ? selectionOption.official : true;
   let trialUrl: string | null = null;
   let officialErrorCode: ErrorCode | null = null;
   /** 官方直链可用但档位低于请求时的兜底结果 */
-  let officialFallback: { url: string; level: QualityLevel } | null = null;
-  if (track.source === "netease" && !options.skipOfficialOnline) {
+  let officialFallback: {
+    url: string;
+    level: QualityLevel;
+    qualityProvenance?: QualityProvenance;
+  } | null = null;
+  if (track.source === "netease" && !options.skipOfficialOnline && officialAllowed) {
     const user = useUserStore();
     try {
       const resolved = await resolveNeteaseUrl(track, songLevel, {
@@ -493,9 +611,20 @@ const resolveOnlineUrl = async (
       } else if (!resolved.isTrial) {
         const level = resolved.level;
         if (!level || qualityMeets(level, songLevel)) {
-          return { ok: true, url: resolved.url, isTrial: false, provider: "official", level };
+          return {
+            ok: true,
+            url: resolved.url,
+            isTrial: false,
+            provider: "official",
+            level,
+            qualityProvenance: resolved.qualityProvenance,
+          };
         }
-        officialFallback = { url: resolved.url, level };
+        officialFallback = {
+          url: resolved.url,
+          level,
+          qualityProvenance: resolved.qualityProvenance,
+        };
       } else {
         trialUrl = resolved.url;
       }
@@ -504,15 +633,26 @@ const resolveOnlineUrl = async (
       officialErrorCode = ErrorCode.NETWORK_ERROR;
     }
   }
-  if (track.source === "qqmusic" && !options.skipOfficialOnline) {
+  if (track.source === "qqmusic" && !options.skipOfficialOnline && officialAllowed) {
     try {
       const resolved = await resolveQQMusicUrl(track, songLevel);
       if (resolved.available) {
         const level = resolved.level;
         if (!level || qualityMeets(level, songLevel)) {
-          return { ok: true, url: resolved.url, isTrial: false, provider: "official", level };
+          return {
+            ok: true,
+            url: resolved.url,
+            isTrial: false,
+            provider: "official",
+            level,
+            qualityProvenance: resolved.qualityProvenance,
+          };
         }
-        officialFallback = { url: resolved.url, level };
+        officialFallback = {
+          url: resolved.url,
+          level,
+          qualityProvenance: resolved.qualityProvenance,
+        };
       } else {
         officialErrorCode = resolved.errorCode;
       }
@@ -521,7 +661,7 @@ const resolveOnlineUrl = async (
       officialErrorCode = ErrorCode.NETWORK_ERROR;
     }
   }
-  if (track.source === "kugou" && !options.skipOfficialOnline) {
+  if (track.source === "kugou" && !options.skipOfficialOnline && officialAllowed) {
     try {
       const resolved = await resolveKugouUrl(track, songLevel);
       if (resolved.available) {
@@ -532,9 +672,14 @@ const resolveOnlineUrl = async (
             isTrial: false,
             provider: "official",
             level: resolved.level,
+            qualityProvenance: resolved.qualityProvenance,
           };
         }
-        officialFallback = { url: resolved.url, level: resolved.level };
+        officialFallback = {
+          url: resolved.url,
+          level: resolved.level,
+          qualityProvenance: resolved.qualityProvenance,
+        };
       } else {
         officialErrorCode = resolved.errorCode;
       }
@@ -543,7 +688,7 @@ const resolveOnlineUrl = async (
       officialErrorCode = ErrorCode.NETWORK_ERROR;
     }
   }
-  if (track.source === "kuwo" && !options.skipOfficialOnline) {
+  if (track.source === "kuwo" && !options.skipOfficialOnline && officialAllowed) {
     try {
       const resolved = await resolveKuwoUrl(track, songLevel);
       if (resolved.available) {
@@ -554,9 +699,14 @@ const resolveOnlineUrl = async (
             isTrial: false,
             provider: "official",
             level: resolved.level,
+            qualityProvenance: resolved.qualityProvenance,
           };
         }
-        officialFallback = { url: resolved.url, level: resolved.level };
+        officialFallback = {
+          url: resolved.url,
+          level: resolved.level,
+          qualityProvenance: resolved.qualityProvenance,
+        };
       } else {
         officialErrorCode = resolved.errorCode;
       }
@@ -565,12 +715,20 @@ const resolveOnlineUrl = async (
       officialErrorCode = ErrorCode.NETWORK_ERROR;
     }
   }
-  const pluginResolved = await resolveByPluginBest(track, songLevel, options.skipPluginIds ?? []);
+  const pluginResolved = await resolveByPluginBest(
+    track,
+    songLevel,
+    options.skipPluginIds ?? [],
+    false,
+    selectionOption?.id,
+  );
   if (officialFallback) {
     // 官方只是降档拿到了直链：插件承诺更高档位才替换，否则保留可播的官方结果
+    // 显式选择时替换依据必须来自实际档位回执，请求回显的老插件不能冒充达标来源
     const pluginIsHigher =
       pluginResolved.ok &&
       pluginResolved.level !== undefined &&
+      (!selectionOption || pluginResolved.qualityProvenance?.evidence !== "request") &&
       qualityRank(pluginResolved.level) > qualityRank(officialFallback.level);
     if (pluginIsHigher) return pluginResolved;
     return {
@@ -579,6 +737,7 @@ const resolveOnlineUrl = async (
       isTrial: false,
       provider: "official",
       level: officialFallback.level,
+      qualityProvenance: officialFallback.qualityProvenance,
     };
   }
   if (pluginResolved.ok) return pluginResolved;
@@ -602,6 +761,13 @@ export interface ResolvedTrackSource {
   pluginId?: string;
   /** 解析确认的实际音质档位；本地 / 缓存命中等未知场景缺省 */
   level?: QualityLevel;
+  /** 本次音源的档位来源证据；旧路径查询或未知场景缺省 */
+  qualityProvenance?: QualityProvenance;
+  /**
+   * 本次请求的具体平台音质选择标识；是请求目标而非实际交付，
+   * 与 level / qualityProvenance 分开携带，供播放校验对照使用
+   */
+  qualitySelection?: string;
   /**
    * 下载音源并返回可供原生预载使用的缓存路径
    * @param preloadId - 可选的预载消费者标识，用于缓存租约和独立取消
@@ -639,6 +805,12 @@ export const resolveTrackSource = async (
   }
   const settings = useSettingsStore();
   const songLevel = settings.player.songLevel;
+  // 具体音质选择仅在显式传入或设置保存过时生效；通用请求保持旧默认行为
+  const selectionId = options.qualitySelection ?? settings.player.songQualitySelection;
+  const selectionOption = resolveSelectionOption(track, songLevel, selectionId);
+  const targetLevel = selectionOption?.level ?? songLevel;
+  // 跨平台映射后仍按具体选项分缓存，增强与空间档不能共用 sky 桶
+  const concreteSelectionId = selectionOption?.id;
   if (track.source === "plugin") {
     const resolved = await resolveByPlugin(track, songLevel, options.skipPluginIds);
     if (!resolved.ok) {
@@ -650,27 +822,81 @@ export const resolveTrackSource = async (
       fromCache: false,
       provider: "plugin",
       pluginId: resolved.pluginId,
+      level: resolved.level,
+      qualityProvenance: resolved.qualityProvenance,
     };
   }
   if (!options.skipDownloaded) {
     try {
-      const downloaded = await window.api.download.lookup({
+      const identity: DownloadTrackIdentity = {
         source: track.source,
         id: track.id,
         ...(track.source === "streaming"
           ? { serverId: track.serverId, originalId: track.originalId }
           : {}),
-      });
-      if (downloaded) return { source: downloaded, fromCache: false, provider: "download" };
+      };
+      const downloadApi = window.api.download;
+      if (typeof downloadApi?.lookupInfo === "function") {
+        // 新查询带回随文件保存的来源信息，经校验后原样继承
+        const file = validatedAudioFile(await downloadApi.lookupInfo(identity));
+        if (file) {
+          return {
+            source: file.path,
+            fromCache: false,
+            provider: "download",
+            qualityProvenance: file.qualityProvenance,
+            qualitySelection: concreteSelectionId,
+          };
+        }
+      } else {
+        // 旧查询只回路径：显式不带来源信息，清掉曲目上残留的上一轮 provenance
+        const downloaded = await window.api.download.lookup(identity);
+        if (downloaded)
+          return {
+            source: downloaded,
+            fromCache: false,
+            provider: "download",
+            qualitySelection: concreteSelectionId,
+          };
+      }
     } catch (err) {
       console.warn("[audio-source] download lookup failed:", err);
     }
   }
-  const cacheKey = cacheKeyForTrack(track, songLevel);
+  if (
+    isOnlinePlatform(track.source) &&
+    ((selectionId && (!normalizeStoredQualitySelection(selectionId) || !selectionOption)) ||
+      (track.source === "qqmusic" && !selectionOption && songLevel === "jyeffect"))
+  ) {
+    reportLoadError(ErrorCode.URL_RESOLVE_FAILED, options);
+    return null;
+  }
+  const cacheKey = cacheKeyForTrack(track, targetLevel, concreteSelectionId);
   const cacheEnabled = settings.system.cache?.songCache?.enabled === true && cacheKey !== null;
-  if (cacheEnabled) {
-    const cached = await window.api.cache.song.lookup(cacheKey!);
-    if (cached) return { source: cached, fromCache: true, provider: "cache" };
+  if (cacheEnabled && !options.skipCache) {
+    const cacheApi = window.api.cache.song;
+    if (typeof cacheApi?.lookupInfo === "function") {
+      // 新查询带回随缓存保存的来源信息，经校验后原样继承
+      const file = validatedAudioFile(await cacheApi.lookupInfo(cacheKey!));
+      if (file) {
+        return {
+          source: file.path,
+          fromCache: true,
+          provider: "cache",
+          qualityProvenance: file.qualityProvenance,
+          qualitySelection: concreteSelectionId,
+        };
+      }
+    } else {
+      const cached = await window.api.cache.song.lookup(cacheKey!);
+      if (cached)
+        return {
+          source: cached,
+          fromCache: true,
+          provider: "cache",
+          qualitySelection: concreteSelectionId,
+        };
+    }
   }
   // 流媒体
   if (track.source === "streaming") {
@@ -702,7 +928,11 @@ export const resolveTrackSource = async (
   // 在线源（netease / qqmusic / kugou）
   if (isOnlinePlatform(track.source)) {
     try {
-      const resolved = await resolveOnlineUrl(track, songLevel, options);
+      // 把按当前平台解析出的选择带入子流程，设置默认路径与显式传参走同一套官方门槛
+      const resolved = await resolveOnlineUrl(track, targetLevel, {
+        ...options,
+        qualitySelection: selectionOption?.id ?? options.qualitySelection,
+      });
       if (!resolved.ok) {
         reportLoadError(resolved.errorCode, options);
         return null;
@@ -714,11 +944,16 @@ export const resolveTrackSource = async (
         provider: resolved.provider,
         pluginId: resolved.pluginId,
         level: resolved.level,
+        qualityProvenance: resolved.qualityProvenance,
+        qualitySelection: concreteSelectionId,
       };
       if (cacheEnabled && !resolved.isTrial) {
+        // 来源信息随缓存文件落盘，再次命中缓存时仍能展示档位依据
+        const fetchSong = window.api.cache.song.fetch;
+        const provenance = resolved.qualityProvenance;
         result.cacheRequest = async (preloadId, signal) => {
           if (signal?.aborted) return null;
-          return window.api.cache.song.fetch(cacheKey, track.source, url, preloadId);
+          return fetchSong(cacheKey, track.source, url, preloadId, provenance);
         };
       }
       return result;

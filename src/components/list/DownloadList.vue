@@ -6,7 +6,6 @@ import { useStatusStore } from "@/stores/status";
 import { useDownloadStore } from "@/stores/download";
 import { useDownload } from "@/composables/useDownload";
 import { dialog } from "@/composables/useDialog";
-import { getQualityLevel } from "@/utils/quality";
 import QualityTag from "@/components/ui/QualityTag.vue";
 import { formatTime } from "@/utils/time";
 import { formatFileSize } from "@/utils/format";
@@ -226,7 +225,9 @@ defineExpose({ playAll });
               >
                 <QualityTag
                   v-if="item.track.quality"
-                  :level="getQualityLevel(item.track.quality)"
+                  :quality="item.track.quality"
+                  :provenance="item.track.qualityProvenance"
+                  :measured="!!item.probed"
                   class="h-[18px]"
                 />
                 <span class="truncate">{{ artistText(item) }}</span>

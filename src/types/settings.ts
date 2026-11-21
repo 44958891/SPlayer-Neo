@@ -256,6 +256,8 @@ export interface PlayerSettings {
   reverseSpectrum: boolean;
   /** 在线歌曲音质偏好；实际可用级别取决于账号权限 */
   songLevel: QualityLevel;
+  /** 上次选择的具体平台档位，跨平台时按相同音质意图映射 */
+  songQualitySelection?: string;
   /** 允许完整音源不可用时播放试听片段 */
   allowTrialPlay: boolean;
   /** 时间显示格式 */

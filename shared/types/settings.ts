@@ -353,6 +353,8 @@ export interface DownloadSettings {
   dir: string | null;
   /** 下载音质 */
   quality: PluginQuality;
+  /** 下载默认的具体平台选择，混合平台曲目按同一意图映射 */
+  qualitySelection?: string;
   /** 文件名模板，支持 {artist} {title} {album}；不含子目录 */
   fileTemplate: string;
   /** 文件智能分类：按规则分子文件夹 */

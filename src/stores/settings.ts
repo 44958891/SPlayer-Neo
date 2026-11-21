@@ -17,6 +17,7 @@ import {
 } from "@/types/settings";
 import type { SystemConfig, LocaleCode } from "@shared/types/settings";
 import { ALL_PLATFORMS } from "@shared/types/platform";
+import { normalizeStoredQualitySelection } from "@shared/utils/platformQuality";
 import { defaultSystemConfig } from "@shared/defaults/settings";
 import { setByPath } from "@shared/utils/path";
 import { DEFAULT_SKIP_TRACK_KEYWORDS } from "@/utils/preset/skipKeywords";
@@ -150,6 +151,7 @@ export const useSettingsStore = defineStore(
       spectrumBarWidth: 4,
       reverseSpectrum: false,
       songLevel: "hq",
+      songQualitySelection: undefined,
       allowTrialPlay: false,
       timeFormat: "current-total",
       showProgressTooltip: true,
@@ -341,6 +343,7 @@ export const useSettingsStore = defineStore(
 
     /** 本地配置写入后处理 */
     const afterLocalChange = (path: string, value: unknown): void => {
+      if (path === "player.songLevel") player.songQualitySelection = undefined;
       if (path === "lyric.springPreset" && value !== "custom") {
         const params = SPRING_PRESETS[value as Exclude<SpringPreset, "custom">];
         lyric.springMass = params.mass;
@@ -375,6 +378,9 @@ export const useSettingsStore = defineStore(
           preset: PresetSettings;
           player: PlayerSettings;
         };
+        // 归一化音质选择：旧母带 2.0 升级为 4.0；已移除的 QQ 臻品选择保留原标识
+        // 由解析端显式报错，不清空后隐式按 sky 请求；其余未知标识清除
+        player.songQualitySelection = normalizeStoredQualitySelection(player.songQualitySelection);
         if (player.transitionMode !== "crossfade") player.transitionMode = "none";
         if (
           player.transitionPreference !== "conservative" &&

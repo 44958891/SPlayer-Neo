@@ -1,5 +1,7 @@
 import path from "node:path";
 import type { Track, Artist, Album, AudioQuality } from "@shared/types/player";
+import type { QualityProvenance } from "@shared/types/quality";
+import { validateQualityProvenance } from "@shared/utils/qualityProvenance";
 import type { AlbumSummary, ArtistSummary } from "@shared/types/library";
 import type { LibraryStats } from "@shared/types/stats";
 import { getDb } from "./index";
@@ -27,7 +29,48 @@ interface TrackRow {
   file_mtime: number | null;
   file_ctime: number | null;
   scanned_at: number;
+  /** 关联出的已下载音质依据 JSON 文本，无匹配为 NULL */
+  dl_provenance?: string | null;
 }
+
+/** 解析关联出的音质依据 JSON 文本，损坏数据按未知来源处理 */
+const parseStoredProvenance = (raw: string | null | undefined): QualityProvenance | undefined => {
+  if (raw == null) return undefined;
+  try {
+    return validateQualityProvenance(JSON.parse(raw));
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * 已完成下载记录的音质依据关联列（单条相关子查询，无逐行 stat / 内存表）
+ * - 先按完成时间锁定该路径最新一条 done 记录，再比对印章：
+ *   最新记录 size/mtime 与库行不符即放弃，绝不回退匹配旧记录的巧合印章
+ * - CUE 分轨行不继承整文件品牌依据
+ * @param alias - tracks 表别名
+ * @returns 可拼进 SELECT 列表的子查询 SQL
+ */
+const dlProvenanceCol = (alias = "t"): string => `(
+  SELECT CASE
+    WHEN ${alias}.cue_path IS NULL
+      AND json_extract(latest.track_json, '$.fileSize') = ${alias}.file_size
+      AND json_extract(latest.track_json, '$.mtime') = ${alias}.file_mtime
+    THEN json_extract(latest.track_json, '$.qualityProvenance')
+  END
+  FROM (
+    SELECT dt.track_json
+    FROM download_tasks dt
+    WHERE dt.status = 'done'
+      AND dt.file_path = ${alias}.path
+    ORDER BY dt.finished_at DESC, dt.created_at DESC, dt.task_id DESC
+    LIMIT 1
+  ) latest
+)`;
+
+/** 曲目查询的 SELECT 列表：行数据 + 关联音质依据 */
+const trackSelect = (alias = "t"): string =>
+  `SELECT ${alias}.*, ${dlProvenanceCol(alias)} AS dl_provenance FROM tracks ${alias}`;
 
 /** 将数据库行解析为 Track */
 const rowToTrack = (row: TrackRow): Track => {
@@ -60,12 +103,13 @@ const rowToTrack = (row: TrackRow): Track => {
     mtime: row.file_mtime ?? undefined,
     ctime: row.file_ctime ?? undefined,
     quality,
+    qualityProvenance: parseStoredProvenance(row.dl_provenance),
   };
 };
 
 /** 查询全部曲目（含被 CUE 引用的容器整轨，供扫描器读取时长/封面等） */
 export const getAllTracks = (): Track[] => {
-  const rows = getDb().prepare("SELECT * FROM tracks").all() as TrackRow[];
+  const rows = getDb().prepare(trackSelect()).all() as TrackRow[];
   return rows.map(rowToTrack);
 };
 
@@ -88,7 +132,7 @@ export const getTrackCount = (): number => {
 /** 随机取一首曲目，库为空时返回 null */
 export const getRandomTrack = (): Track | null => {
   const row = getDb()
-    .prepare(`SELECT * FROM tracks WHERE ${excludeCueContainer()} ORDER BY RANDOM() LIMIT 1`)
+    .prepare(`${trackSelect()} WHERE ${excludeCueContainer("t.path")} ORDER BY RANDOM() LIMIT 1`)
     .get() as TrackRow | undefined;
   return row ? rowToTrack(row) : null;
 };
@@ -98,7 +142,7 @@ export const getRandomTracks = (limit: number): Track[] => {
   const safe = Math.max(0, Math.min(limit | 0, 500));
   if (safe === 0) return [];
   const rows = getDb()
-    .prepare(`SELECT * FROM tracks WHERE ${excludeCueContainer()} ORDER BY RANDOM() LIMIT ?`)
+    .prepare(`${trackSelect()} WHERE ${excludeCueContainer("t.path")} ORDER BY RANDOM() LIMIT ?`)
     .all(safe) as TrackRow[];
   return rows.map(rowToTrack);
 };
@@ -223,7 +267,7 @@ export const searchTracks = (query: string): Track[] => {
   const pattern = `%${escaped}%`;
   const rows = getDb()
     .prepare(
-      `SELECT * FROM tracks WHERE (title LIKE ? ESCAPE '\\' OR artists LIKE ? ESCAPE '\\' OR album LIKE ? ESCAPE '\\') AND ${excludeCueContainer()}`,
+      `${trackSelect()} WHERE (t.title LIKE ? ESCAPE '\\' OR t.artists LIKE ? ESCAPE '\\' OR t.album LIKE ? ESCAPE '\\') AND ${excludeCueContainer("t.path")}`,
     )
     .all(pattern, pattern, pattern) as TrackRow[];
   return rows.map(rowToTrack);
@@ -299,7 +343,7 @@ export const getArtistList = (): ArtistSummary[] => {
 export const getAlbumTracks = (albumName: string): Track[] => {
   const rows = getDb()
     .prepare(
-      `SELECT * FROM tracks WHERE json_extract(album, '$.name') = ? AND ${excludeCueContainer()}`,
+      `${trackSelect()} WHERE json_extract(t.album, '$.name') = ? AND ${excludeCueContainer("t.path")}`,
     )
     .all(albumName) as TrackRow[];
   return rows.map(rowToTrack);
@@ -309,7 +353,8 @@ export const getAlbumTracks = (albumName: string): Track[] => {
 export const getArtistTracks = (artistName: string): Track[] => {
   const rows = getDb()
     .prepare(
-      `SELECT DISTINCT t.* FROM tracks t, json_each(t.artists) a
+      `SELECT DISTINCT t.*, ${dlProvenanceCol("t")} AS dl_provenance
+       FROM tracks t, json_each(t.artists) a
        WHERE LOWER(json_extract(a.value, '$.name')) = LOWER(?)
          AND ${excludeCueContainer("t.path")}`,
     )
@@ -374,7 +419,7 @@ export const getTracksByIds = (ids: string[]): Track[] => {
   if (ids.length === 0) return [];
   const placeholders = ids.map(() => "?").join(",");
   const rows = getDb()
-    .prepare(`SELECT * FROM tracks WHERE id IN (${placeholders})`)
+    .prepare(`${trackSelect()} WHERE t.id IN (${placeholders})`)
     .all(...ids) as TrackRow[];
   return rows.map(rowToTrack);
 };

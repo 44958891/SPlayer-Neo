@@ -5,13 +5,14 @@ import type { DownloadTask } from "@shared/types/download";
 
 const state = vi.hoisted(() => ({ db: null as DatabaseSync | null }));
 vi.mock("./index", () => ({ getDb: () => state.db }));
-import { listCompletedPaths, upsert } from "./downloads";
+import { listCompletedPaths, findById, upsert } from "./downloads";
 
 describe("下载记录精确查询", () => {
   beforeEach(() => {
     state.db = new DatabaseSync(":memory:");
     state.db.exec(`CREATE TABLE download_tasks (
       task_id TEXT PRIMARY KEY, track_json TEXT NOT NULL, quality_level TEXT NOT NULL,
+      quality_selection TEXT,
       status TEXT NOT NULL, received INTEGER, total INTEGER, file_path TEXT,
       error_code TEXT, tag_warning INTEGER, probed INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER, finished_at INTEGER
@@ -75,5 +76,23 @@ describe("下载记录精确查询", () => {
     });
     expect(listCompletedPaths(task.track)).toEqual(["a.flac"]);
     expect(listCompletedPaths({ ...task.track, originalId: "other" })).toEqual([]);
+  });
+
+  it("qualitySelection 随任务行落库并原样读回；缺省为 undefined", () => {
+    const task: DownloadTask = {
+      taskId: "sel",
+      status: "done",
+      qualityLevel: "sky",
+      qualitySelection: "qqmusic:qq-premium-2.0",
+      received: 1,
+      total: 1,
+      createdAt: 1,
+      filePath: "sel.flac",
+      track: { source: "qqmusic", id: "1", title: "test", artists: [], duration: 1000 },
+    };
+    upsert(task);
+    upsert({ ...task, taskId: "plain", qualitySelection: undefined });
+    expect(findById("sel")?.qualitySelection).toBe("qqmusic:qq-premium-2.0");
+    expect(findById("plain")?.qualitySelection).toBeUndefined();
   });
 });

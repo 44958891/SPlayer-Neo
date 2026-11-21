@@ -1,5 +1,6 @@
 import type { Track } from "@shared/types/player";
 import { ErrorCode } from "@shared/types/errors";
+import type { QualityProvenance } from "@shared/types/quality";
 import type { QualityLevel } from "@/utils/quality";
 import { netease as neteaseApi, neteaseCall } from "@/apis/netease";
 import { isExplicitNeteaseAuthFailure } from "@/apis/neteaseAuth";
@@ -42,7 +43,13 @@ const NETEASE_LEVEL_TO_HOST: Record<string, QualityLevel> = {
 };
 
 export type NeteasePlayUrlResult =
-  | { available: true; url: string; isTrial: boolean; level?: QualityLevel }
+  | {
+      available: true;
+      url: string;
+      isTrial: boolean;
+      level?: QualityLevel;
+      qualityProvenance?: QualityProvenance;
+    }
   | { available: false; errorCode: ErrorCode };
 
 export interface NeteaseSessionRecovery {
@@ -63,9 +70,26 @@ export const classifyNeteasePlayUrl = (item: unknown): NeteasePlayUrlResult => {
   }
   const data = item as { url?: unknown; freeTrialInfo?: unknown; fee?: unknown; level?: unknown };
   if (typeof data.url === "string" && data.url) {
-    const level =
-      typeof data.level === "string" ? NETEASE_LEVEL_TO_HOST[data.level.toLowerCase()] : undefined;
-    return { available: true, url: data.url, isTrial: data.freeTrialInfo != null, level };
+    const rawLevel =
+      typeof data.level === "string" && data.level.trim().length <= 96
+        ? data.level.trim()
+        : undefined;
+    const level = rawLevel ? NETEASE_LEVEL_TO_HOST[rawLevel.toLowerCase()] : undefined;
+    // 档位来自官方响应的 level 字段（响应证据）；nativeTier 保留接口原文，不做换算
+    const qualityProvenance: QualityProvenance = {
+      provider: "official",
+      platform: "netease",
+      evidence: "response",
+      ...(rawLevel ? { nativeTier: rawLevel } : {}),
+      ...(level ? { level } : {}),
+    };
+    return {
+      available: true,
+      url: data.url,
+      isTrial: data.freeTrialInfo != null,
+      level,
+      qualityProvenance,
+    };
   }
   const fee = Number(data.fee);
   if (fee === 1 || fee === 4) {

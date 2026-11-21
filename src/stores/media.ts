@@ -1,4 +1,5 @@
 import type { MediaInfo, PlaybackContext, Track, TrackDetail } from "@shared/types/player";
+import type { PlaybackQualityStatus } from "@shared/types/playbackQuality";
 import type { LyricData, LyricFormat, LyricInput, LyricLine } from "@shared/types/lyrics";
 import { useSettingsStore } from "@/stores/settings";
 import { watchLyricPreference } from "@/services/lyric/loader";
@@ -62,11 +63,20 @@ export const useMediaStore = defineStore("media", () => {
   /**
    * 更新 track
    * @param newTrack - 新的歌曲信息
-   * @param newDetail - 新的歌曲详细信息；省略则保留现有 detail
+   * @param newDetail - 本次详情，传 null 开始重新加载；同曲元数据更新时省略则保留实测信息
    */
-  const setTrack = (newTrack: Track, newDetail?: TrackDetail): void => {
+  const setTrack = (newTrack: Track, newDetail?: TrackDetail | null): void => {
+    const current = track.value;
+    const sameTrack =
+      current &&
+      current.id === newTrack.id &&
+      current.source === newTrack.source &&
+      current.serverId === newTrack.serverId &&
+      current.path === newTrack.path &&
+      current.plugin?.pluginId === newTrack.plugin?.pluginId &&
+      current.plugin?.source === newTrack.plugin?.source;
     track.value = newTrack;
-    if (newDetail) detail.value = newDetail;
+    if (newDetail !== undefined || !sameTrack) detail.value = newDetail ?? null;
   };
 
   /**
@@ -80,8 +90,10 @@ export const useMediaStore = defineStore("media", () => {
   /**
    * 把 audio-engine 解析出的元数据合并到当前 Track 上
    * 保留身份字段（id/source/serverId/originalId/platform/path）
-   * 对未设置/空值的展示字段做兜底填充（duration/quality）
-   * streaming 源的 cover/title/artist/album 已经是服务器返回的权威值，绝不被引擎覆盖
+   * 音质使用本次解码结果，来源依据由本次加载回传，避免旧目录档位覆盖真实文件
+   * streaming 源的 cover/title/artist/album 保留服务器返回值
+   * @param info - 引擎实测参数与本次来源
+   * @param newDetail - 本次文件详情
    */
   const enrichTrack = (info: MediaInfo, newDetail?: TrackDetail): void => {
     if (!track.value) return;
@@ -102,7 +114,8 @@ export const useMediaStore = defineStore("media", () => {
       album: track.value.album ?? info.album,
       duration: track.value.duration > 0 ? track.value.duration : info.duration,
       cover: isStreaming ? track.value.cover : (track.value.cover ?? info.cover),
-      quality: track.value.quality ?? info.quality,
+      quality: info.quality ?? newDetail?.quality ?? track.value.quality,
+      qualityProvenance: newDetail?.qualityProvenance ?? info.qualityProvenance,
     };
     if (newDetail) detail.value = newDetail;
   };
@@ -120,6 +133,16 @@ export const useMediaStore = defineStore("media", () => {
       cover: track.value.cover || url,
       coverOriginal: track.value.coverOriginal || url,
     };
+  };
+
+  /**
+   * 补写当前详情的播放档位对照结论
+   * 主进程未随 LoadResult 下发结论时，由播放流程按解析来源与解码参数复验后写入
+   * @param status - 请求与实际交付的对照结论
+   */
+  const setPlaybackQuality = (status: PlaybackQualityStatus): void => {
+    if (!detail.value) return;
+    detail.value = { ...detail.value, playbackQuality: status };
   };
 
   /** 重置歌词状态 */
@@ -243,6 +266,7 @@ export const useMediaStore = defineStore("media", () => {
     setPlaybackContext,
     enrichTrack,
     patchCover,
+    setPlaybackQuality,
     resetLyricState,
     setLyric,
     updateLyricIndex,

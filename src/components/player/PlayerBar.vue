@@ -46,7 +46,7 @@ const { enqueue: enqueueDownload } = useDownload();
 const { items: menuItems, handleSelect: onMenuSelect } = useTrackMenu(toRef(media, "track"), {
   hidePlayActions: true,
   onAddToPlaylist: (track) => openPicker([track]),
-  onDownload: (track, quality) => void enqueueDownload(track, { quality }),
+  onDownload: (track, opts) => void enqueueDownload(track, opts ?? {}),
 });
 </script>
 

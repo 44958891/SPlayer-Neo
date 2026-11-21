@@ -154,12 +154,19 @@ const canDownload = computed(
 );
 
 const downloadQualityItems = computed(() =>
-  buildDownloadQualityItems(t("download.qualityDefault")),
+  buildDownloadQualityItems(t("download.qualityDefault"), "", displayTrack.value ?? undefined),
 );
 
 const onDownloadSelect = (key: string): void => {
   if (!displayTrack.value) return;
-  void enqueueDownload(displayTrack.value, key ? { quality: key as QualityLevel } : {});
+  // key：空 = 跟随默认；platform:tier = 平台具体选择标识；其余为旧通用档位兜底
+  if (!key) {
+    void enqueueDownload(displayTrack.value);
+  } else if (key.includes(":")) {
+    void enqueueDownload(displayTrack.value, { qualitySelection: key });
+  } else {
+    void enqueueDownload(displayTrack.value, { quality: key as QualityLevel });
+  }
 };
 
 const collapse = (): void => {

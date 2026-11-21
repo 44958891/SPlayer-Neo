@@ -1,5 +1,6 @@
 import type { SettingCategory } from "@/types/settings-schema";
 import DownloadDirConfig from "@/components/settings/custom/DownloadDirConfig.vue";
+import PlatformQualityConfig from "@/components/settings/custom/PlatformQualityConfig.vue";
 import IconLucideDownload from "~icons/lucide/download";
 
 const downloadCategory: SettingCategory = {
@@ -30,19 +31,20 @@ const downloadCategory: SettingCategory = {
       items: [
         {
           key: "downloadQuality",
-          type: "select",
-          binding: { store: "settings", path: "system.download.quality" },
-          options: [
-            { value: "jymaster", label: "Master" },
-            { value: "sky", label: "Sky" },
-            { value: "jyeffect", label: "Surround" },
-            { value: "hi-res", label: "Hi-Res" },
-            { value: "lossless", label: "Lossless" },
-            { value: "hq", label: "HQ" },
-            { value: "sq", label: "SQ" },
-            { value: "lq", label: "LQ" },
-          ],
+          type: "custom",
+          component: PlatformQualityConfig,
+          componentProps: { mode: "download" },
           defaultValue: "lossless",
+          keywords: [
+            "settings.songLevel.jymaster",
+            "settings.songLevel.sky",
+            "settings.songLevel.jyeffect",
+            "settings.songLevel.hi-res",
+            "settings.songLevel.lossless",
+            "settings.songLevel.hq",
+            "settings.songLevel.sq",
+            "settings.songLevel.lq",
+          ],
         },
         {
           key: "downloadFileTemplate",

@@ -48,8 +48,8 @@ export interface TrackMenuOptions {
   onEditTags?: (track: Track) => void;
   /** 打开手动换源弹窗 */
   onSwitchSource?: (track: Track) => void;
-  /** 下载回调；quality 为空表示用设置中的默认音质 */
-  onDownload?: (track: Track, quality?: QualityLevel) => void;
+  /** 下载回调；不带参数表示用设置中的默认目标，qualitySelection 为平台具体选择标识 */
+  onDownload?: (track: Track, opts?: { quality?: QualityLevel; qualitySelection?: string }) => void;
   /** 从云盘删除回调 */
   onRemoveFromCloud?: (track: Track) => void;
 }
@@ -133,7 +133,12 @@ export const useTrackMenu = (
           source !== "plugin" &&
           !!options.onDownload &&
           settings.system.download.enabled,
-        children: buildDownloadQualityItems(t("download.qualityDefault"), "download:"),
+        // 按歌曲平台生成菜单：无法服务的档位由工具内置禁用标记置灰
+        children: buildDownloadQualityItems(
+          t("download.qualityDefault"),
+          "download:",
+          track.value ?? undefined,
+        ),
       },
       {
         key: "removeFromCollection",
@@ -219,10 +224,18 @@ export const useTrackMenu = (
   const handleSelect = async (key: string): Promise<void> => {
     const current = track.value;
     if (!current) return;
-    // 下载子菜单：download:<音质>，空音质表示默认
+    // 下载子菜单：download:<选择标识|旧通用档位>，空表示跟随默认
     if (key.startsWith("download:")) {
-      const quality = key.slice("download:".length);
-      options.onDownload?.(current, quality ? (quality as QualityLevel) : undefined);
+      const rest = key.slice("download:".length);
+      if (!rest) {
+        options.onDownload?.(current, {});
+      } else if (rest.includes(":")) {
+        // 平台具体选择标识（platform:tier）
+        options.onDownload?.(current, { qualitySelection: rest });
+      } else {
+        // 无平台上下文时的旧通用档位兜底
+        options.onDownload?.(current, { quality: rest as QualityLevel });
+      }
       return;
     }
     // 插件菜单：plugin:<插件id>:<菜单id>（插件 id 不含冒号，按首个冒号切分）

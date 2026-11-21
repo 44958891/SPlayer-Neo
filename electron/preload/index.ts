@@ -32,6 +32,7 @@ import type {
 } from "@shared/types/playlist";
 import type { CjkTransformMode } from "@shared/types/opencc";
 import type { DownloadTrackIdentity } from "@shared/types/download";
+import type { QualityProvenance, ResolvedAudioFile } from "@shared/types/quality";
 
 /** 订阅主进程推送的事件 */
 const subscribe = <T>(channel: string, callback: (data: T) => void): (() => void) => {
@@ -528,6 +529,12 @@ const api = {
     list: () => ipcRenderer.invoke("download:list"),
     lookup: (track: DownloadTrackIdentity): Promise<string | null> =>
       ipcRenderer.invoke("download:lookup", track),
+    // 已下载文件查询：附带随存的音质依据（文件被替换时 provenance 降级 generic）
+    lookupInfo: (track: DownloadTrackIdentity): Promise<ResolvedAudioFile | null> =>
+      ipcRenderer.invoke("download:lookupInfo", track),
+    // 精确路径查询：本地播放回放识别用
+    lookupInfoByPath: (filePath: string): Promise<ResolvedAudioFile | null> =>
+      ipcRenderer.invoke("download:lookupInfoByPath", filePath),
     // 选择下载目录
     pickDir: () => ipcRenderer.invoke("download:pickDir"),
     // 当前下载目录
@@ -593,12 +600,16 @@ const api = {
       // 命中查询：返回本地绝对路径或 null
       lookup: (cacheKey: string): Promise<string | null> =>
         ipcRenderer.invoke("cache:song:lookup", cacheKey),
+      // 命中查询：附带随存的音质依据（旧缓存记录无 provenance）
+      lookupInfo: (cacheKey: string): Promise<ResolvedAudioFile | null> =>
+        ipcRenderer.invoke("cache:song:lookupInfo", cacheKey),
       /**
        * 下载歌曲到缓存，预载调用方需要等待下载完成
        * @param cacheKey - 音源与音质对应的缓存键
        * @param source - 歌曲来源
        * @param streamUrl - 下载地址
        * @param preloadId - 可选的预载消费者标识，用于租约保留和独立取消
+       * @param qualityProvenance - 可选的本次解析音质依据，随缓存行落库
        * @returns 缓存文件路径，失败或取消时返回 null
        */
       fetch: (
@@ -606,8 +617,16 @@ const api = {
         source: TrackSource,
         streamUrl: string,
         preloadId?: string,
+        qualityProvenance?: QualityProvenance,
       ): Promise<string | null> =>
-        ipcRenderer.invoke("cache:song:fetch", cacheKey, source, streamUrl, preloadId),
+        ipcRenderer.invoke(
+          "cache:song:fetch",
+          cacheKey,
+          source,
+          streamUrl,
+          preloadId,
+          qualityProvenance,
+        ),
       // 取消正在进行的下载
       cancel: (cacheKey: string): Promise<void> =>
         ipcRenderer.invoke("cache:song:cancel", cacheKey),

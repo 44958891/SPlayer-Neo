@@ -154,6 +154,33 @@ Provides a playable URL.
 
 See [Quick start](#quick-start) for a call example. If the requested quality is unavailable, return a lower quality and identify it in `quality`.
 
+Neo supports two optional response fields for platform quality badges; older plugins remain compatible:
+
+- `actualSource`: The platform that supplied this audio, such as `netease`, `qqmusic`, `kuwo`, `kugou`, or `migu`. The aliases `wy`, `tx`, `kw`, `kg`, and `mg` are accepted. Do not copy the catalog platform when the resolved audio came from another source
+- `nativeTier`: The native tier explicitly confirmed by the upstream response. QQ `atmos` is Premium Spatial Audio and `atmos_plus` is Premium Spatial Audio 2.0; they are distinct targets. QQ 4.0 may explicitly return `qq-master-4.0`. Historical files retain their original branded provenance
+
+Selections follow the plugin's native tiers. EM v1.1.9 declares these 29 tiers; a declaration does not establish availability for every track:
+
+| Platform | Native request tiers, from low to high                                                    |
+| -------- | ----------------------------------------------------------------------------------------- |
+| Kuwo     | `128k`, `320k`, `flac`, `master` (Master Quality)                                         |
+| Kugou    | `128k`, `320k`, `flac`, `hires`, `atmos` (Viper Spatial Audio), `master` (Viper Ultra HD) |
+| QQ       | `128k`, `320k`, `flac`, `hires`, `atmos`, `atmos_plus`, `master`                          |
+| Netease  | `128k`, `192k`, `320k`, `flac`, `hires`, `jyeffect` (HD Vivid Audio), `sky`, `master`     |
+| Migu     | `128k`, `320k`, `flac`, `hires`                                                           |
+
+Only populate `nativeTier` when the upstream response confirms it. `master` confirms the master family without establishing version 4.0; historical `qq-master-2.0` records retain the QQ artwork but do not satisfy the new 4.0 target. A request parameter or 24-bit/192-kHz file alone does not establish a branded master tier. The tooltip identifies provider declarations, and clearly contradictory measured files display generic technical quality instead. Legacy LX scripts that return only a URL retain `requestedTier` for tracing; it does not establish branded quality.
+
+```ts
+// Use these fields only when the upstream response confirms both source and tier
+return {
+  url: resolved.url,
+  quality: "jymaster",
+  actualSource: "qqmusic",
+  nativeTier: "qq-master-4.0",
+};
+```
+
 ### Search tracks {#musicsearch}
 
 Returns independent source search results, or candidates for matching lyrics, covers, and other metadata.

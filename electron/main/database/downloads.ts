@@ -1,3 +1,5 @@
+import { validateQualityProvenance } from "@shared/utils/qualityProvenance";
+import type { ResolvedAudioFile } from "@shared/types/quality";
 import type { DownloadTask, DownloadTrackIdentity } from "@shared/types/download";
 import type { Track } from "@shared/types/player";
 import { getDb } from "./index";
@@ -7,6 +9,7 @@ interface RawRow {
   task_id: string;
   track_json: string;
   quality_level: string;
+  quality_selection: string | null;
   status: string;
   received: number;
   total: number;
@@ -23,6 +26,7 @@ const toTask = (raw: RawRow): DownloadTask => ({
   taskId: raw.task_id,
   track: JSON.parse(raw.track_json) as Track,
   qualityLevel: raw.quality_level as DownloadTask["qualityLevel"],
+  qualitySelection: raw.quality_selection ?? undefined,
   status: raw.status as DownloadTask["status"],
   received: raw.received,
   total: raw.total,
@@ -39,11 +43,12 @@ export const upsert = (task: DownloadTask): void => {
   getDb()
     .prepare(
       `INSERT INTO download_tasks
-         (task_id, track_json, quality_level, status, received, total, file_path, error_code, tag_warning, probed, created_at, finished_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (task_id, track_json, quality_level, quality_selection, status, received, total, file_path, error_code, tag_warning, probed, created_at, finished_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(task_id) DO UPDATE SET
          track_json = excluded.track_json,
          quality_level = excluded.quality_level,
+         quality_selection = excluded.quality_selection,
          status = excluded.status,
          received = excluded.received,
          total = excluded.total,
@@ -57,6 +62,7 @@ export const upsert = (task: DownloadTask): void => {
       task.taskId,
       JSON.stringify(task.track),
       task.qualityLevel,
+      task.qualitySelection ?? null,
       task.status,
       task.received,
       task.total,
@@ -82,6 +88,49 @@ export const listAll = (): DownloadTask[] => {
     .prepare("SELECT * FROM download_tasks ORDER BY created_at DESC")
     .all() as RawRow[];
   return rows.map(toTask);
+};
+
+/** 已完成任务随文件保存的音质信息（文件身份印章 + 来源依据） */
+export interface CompletedFileRecord extends ResolvedAudioFile {
+  /** 落盘时记录的文件大小，用于识别文件是否被替换 */
+  fileSize?: number;
+  /** 落盘时记录的修改时间（Unix ms），用于识别文件是否被替换 */
+  mtime?: number;
+}
+
+/**
+ * 从 track_json 解析已完成记录的音质信息
+ * provenance 经跨库 JSON 解码，统一走 validateQualityProvenance 剔除非法数据
+ * @param trackJson - 任务行保存的 track JSON
+ * @param filePath - 已完成文件路径
+ * @returns 音质信息；解析失败返回仅含路径的记录
+ */
+const toFileRecord = (trackJson: string, filePath: string): CompletedFileRecord => {
+  const track = JSON.parse(trackJson) as Track;
+  return {
+    path: filePath,
+    quality: track.quality,
+    qualityProvenance: validateQualityProvenance(track.qualityProvenance),
+    fileSize: track.fileSize,
+    mtime: track.mtime,
+  };
+};
+
+/**
+ * 按精确路径查询已完成记录的音质信息（单行查询，不做逐行扫描）
+ * @param filePath - 音频文件绝对路径
+ * @returns 随存的音质信息；无对应已完成任务返回 null
+ */
+export const findCompletedByPath = (filePath: string): CompletedFileRecord | null => {
+  const raw = getDb()
+    .prepare(
+      `SELECT track_json, file_path FROM download_tasks
+       WHERE status = 'done' AND file_path = ?
+       ORDER BY finished_at DESC, created_at DESC, task_id DESC
+       LIMIT 1`,
+    )
+    .get(filePath) as { track_json: string; file_path: string } | undefined;
+  return raw ? toFileRecord(raw.track_json, raw.file_path) : null;
 };
 
 /**
@@ -112,6 +161,34 @@ export const listCompletedPaths = (track: DownloadTrackIdentity): string[] => {
     file_path: string;
   }[];
   return rows.map((row) => row.file_path);
+};
+
+/**
+ * 精确查询歌曲的已完成文件及随存音质信息（lookupInfo 用，候选量极小不做批量优化）
+ * @param track - 歌曲身份，流媒体需匹配服务器和原始 ID
+ * @returns 按完成时间倒序排列的候选记录
+ */
+export const listCompletedRecords = (track: DownloadTrackIdentity): CompletedFileRecord[] => {
+  const rows = getDb()
+    .prepare(
+      `SELECT track_json, file_path FROM download_tasks
+       WHERE status = 'done' AND file_path IS NOT NULL
+         AND json_extract(track_json, '$.source') = ?
+         AND json_extract(track_json, '$.id') = ?
+         AND (? != 'streaming' OR (
+           json_extract(track_json, '$.serverId') = ?
+           AND json_extract(track_json, '$.originalId') = ?
+         ))
+       ORDER BY finished_at DESC, created_at DESC, task_id DESC`,
+    )
+    .all(
+      track.source,
+      track.id,
+      track.source,
+      track.serverId ?? null,
+      track.originalId ?? null,
+    ) as { track_json: string; file_path: string }[];
+  return rows.map((row) => toFileRecord(row.track_json, row.file_path));
 };
 
 /** 列出指定音质的已完成任务（用于重复下载去重） */

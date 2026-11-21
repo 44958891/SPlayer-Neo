@@ -14,7 +14,12 @@ import { ErrorCode } from "@shared/types/errors";
 
 /** 解析单个任务的 URL 与歌词 */
 const resolvePayload = async (payload: DownloadResolvePayload): Promise<DownloadResolution> => {
-  const source = await resolveDownloadSource(payload.track, payload.qualityLevel);
+  // 透传任务保存的平台具体选择，缺失时按旧通用档位解析
+  const source = await resolveDownloadSource(
+    payload.track,
+    payload.qualityLevel,
+    payload.qualitySelection,
+  );
   if (!source.ok) {
     // 带上原因码：监听方据此给出具体提示（探针拒绝 ≠ 插件缺失，处理方向完全不同）
     throw Object.assign(new Error("no download source"), { errorCode: source.errorCode });
@@ -48,6 +53,7 @@ const resolvePayload = async (payload: DownloadResolvePayload): Promise<Download
     declaredSize: source.size,
     lyricText,
     ttmlText,
+    qualityProvenance: source.qualityProvenance,
   };
 };
 

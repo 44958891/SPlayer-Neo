@@ -1,4 +1,6 @@
 import type { TrackSource } from "@shared/types/player";
+import type { QualityProvenance } from "@shared/types/quality";
+import { validateQualityProvenance } from "@shared/utils/qualityProvenance";
 import { getDb } from "./index";
 
 /** 单条记录 */
@@ -10,6 +12,8 @@ export interface SongCacheRow {
   mime: string | null;
   cachedAt: number;
   lastUsedAt: number;
+  /** 下载入缓存时的音质依据；旧记录为空，按未知来源处理 */
+  qualityProvenance?: QualityProvenance;
 }
 
 /** sqlite 原始行 */
@@ -21,7 +25,21 @@ interface RawRow {
   mime: string | null;
   cached_at: number;
   last_used_at: number;
+  quality_provenance: string | null;
 }
+
+/** 解析随存的音质依据 JSON，非法数据按未知来源处理 */
+const parseProvenance = (raw: string | null): QualityProvenance | undefined =>
+  validateQualityProvenance(raw == null ? null : safeParse(raw));
+
+/** 容错 JSON 解析，损坏数据返回空 */
+const safeParse = (raw: string): unknown => {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
 
 /** sqlite snake_case 行 → 业务 camelCase */
 const toRow = (raw: RawRow): SongCacheRow => ({
@@ -32,6 +50,7 @@ const toRow = (raw: RawRow): SongCacheRow => ({
   mime: raw.mime,
   cachedAt: raw.cached_at,
   lastUsedAt: raw.last_used_at,
+  qualityProvenance: parseProvenance(raw.quality_provenance),
 });
 
 /**
@@ -70,19 +89,30 @@ export const touchLastUsed = (cacheKey: string, now: number): void => {
  * @param row - 记录
  */
 export const upsert = (row: SongCacheRow): void => {
+  const provenanceJson = row.qualityProvenance ? JSON.stringify(row.qualityProvenance) : null;
   getDb()
     .prepare(
-      `INSERT INTO song_cache (cache_key, source, filename, size, mime, cached_at, last_used_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO song_cache (cache_key, source, filename, size, mime, cached_at, last_used_at, quality_provenance)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(cache_key) DO UPDATE SET
          source = excluded.source,
          filename = excluded.filename,
          size = excluded.size,
          mime = excluded.mime,
          cached_at = excluded.cached_at,
-         last_used_at = excluded.last_used_at`,
+         last_used_at = excluded.last_used_at,
+         quality_provenance = excluded.quality_provenance`,
     )
-    .run(row.cacheKey, row.source, row.filename, row.size, row.mime, row.cachedAt, row.lastUsedAt);
+    .run(
+      row.cacheKey,
+      row.source,
+      row.filename,
+      row.size,
+      row.mime,
+      row.cachedAt,
+      row.lastUsedAt,
+      provenanceJson,
+    );
 };
 
 /**

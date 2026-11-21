@@ -11,6 +11,8 @@ import { store } from "@main/store";
 import { getSongCacheDir } from "@main/utils/config";
 import { songCacheLog } from "@main/utils/logger";
 import type { TrackSource } from "@shared/types/player";
+import type { QualityProvenance, ResolvedAudioFile } from "@shared/types/quality";
+import { validateQualityProvenance } from "@shared/utils/qualityProvenance";
 import {
   clearAll as dbClearAll,
   deleteByKey,
@@ -244,6 +246,7 @@ const evictIfNeeded = async (): Promise<void> => {
  * @param source - 来源
  * @param streamUrl - 流 URL
  * @param controller - 控制器
+ * @param qualityProvenance - 可选的解析音质依据，随缓存行落库
  * @returns 文件路径
  */
 const runDownload = async (
@@ -251,6 +254,7 @@ const runDownload = async (
   source: TrackSource,
   streamUrl: string,
   controller: AbortController,
+  qualityProvenance?: QualityProvenance,
 ): Promise<string | null> => {
   const start = Date.now();
   const filename = filenameFor(cacheKey);
@@ -321,6 +325,7 @@ const runDownload = async (
       mime,
       cachedAt: now,
       lastUsedAt: now,
+      qualityProvenance: validateQualityProvenance(qualityProvenance),
     });
     await evictIfNeeded();
 
@@ -352,8 +357,13 @@ export const reloadDir = (): void => {
   cacheDir = getSongCacheDir();
 };
 
-/** 查询命中；命中则更新 last_used_at 并返回本地绝对路径 */
-export const lookup = async (cacheKey: string): Promise<string | null> => {
+/**
+ * 查询命中及随存的音质依据；命中则更新 last_used_at
+ * 实际音质以播放解码为准，这里不额外探测文件
+ * @param cacheKey - 缓存键
+ * @returns 缓存路径与音质依据（旧记录无 provenance，按未知来源处理），未命中返回 null
+ */
+export const lookupInfo = async (cacheKey: string): Promise<ResolvedAudioFile | null> => {
   if (!isCacheEnabled()) return null;
   const row = findByKey(cacheKey);
   if (!row) return null;
@@ -363,7 +373,12 @@ export const lookup = async (cacheKey: string): Promise<string | null> => {
     return null;
   }
   touchLastUsed(cacheKey, Date.now());
-  return full;
+  return { path: full, qualityProvenance: row.qualityProvenance };
+};
+
+/** 查询命中；命中则更新 last_used_at 并返回本地绝对路径 */
+export const lookup = async (cacheKey: string): Promise<string | null> => {
+  return (await lookupInfo(cacheKey))?.path ?? null;
 };
 
 /**
@@ -372,6 +387,7 @@ export const lookup = async (cacheKey: string): Promise<string | null> => {
  * @param source - 来源
  * @param streamUrl - 流 URL
  * @param preloadId - 可选的预载消费者标识，用于保留缓存文件和独立取消下载
+ * @param qualityProvenance - 可选的本次解析音质依据，下载入缓存时随行落库
  * @returns 已存在或下载完成的缓存路径，下载失败、被取消或不允许缓存时返回 null
  */
 export const fetchAsync = (
@@ -379,6 +395,7 @@ export const fetchAsync = (
   source: TrackSource,
   streamUrl: string,
   preloadId?: string,
+  qualityProvenance?: QualityProvenance,
 ): Promise<string | null> => {
   if (!isCacheEnabled()) return Promise.resolve(null);
   if (source === "streaming" && !store.get("cache.songCache.cacheStreaming"))
@@ -396,8 +413,11 @@ export const fetchAsync = (
     if (!acquired) return null;
     try {
       if (controller.signal.aborted) return null;
-      const cached = await lookup(cacheKey);
-      return cached ?? (await runDownload(cacheKey, source, streamUrl, controller));
+      const cached = await lookupInfo(cacheKey);
+      return (
+        cached?.path ??
+        (await runDownload(cacheKey, source, streamUrl, controller, qualityProvenance))
+      );
     } finally {
       if (inFlight.get(cacheKey)?.controller === controller) inFlight.delete(cacheKey);
       releaseSlot();

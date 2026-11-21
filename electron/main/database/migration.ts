@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 
 /** 当前 schema 版本 */
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 7;
 
 type TableInfoRow = { name: string };
 
@@ -58,6 +58,22 @@ export const migrate = (d: Database.Database): void => {
       d.exec("ALTER TABLE download_tasks ADD COLUMN probed INTEGER NOT NULL DEFAULT 0");
     }
     v = 5;
+  }
+
+  // v5 → v6: 歌曲缓存随存解析来源的音质依据；旧记录留空按未知来源处理
+  if (v < 6) {
+    if (!hasColumn(d, "song_cache", "quality_provenance")) {
+      d.exec("ALTER TABLE song_cache ADD COLUMN quality_provenance TEXT");
+    }
+    v = 6;
+  }
+
+  // v6 → v7: 下载任务随存平台具体音质选择，区分同通用等级下的不同品牌档位
+  if (v < 7) {
+    if (!hasColumn(d, "download_tasks", "quality_selection")) {
+      d.exec("ALTER TABLE download_tasks ADD COLUMN quality_selection TEXT");
+    }
+    v = 7;
   }
 
   // 版本无关部分

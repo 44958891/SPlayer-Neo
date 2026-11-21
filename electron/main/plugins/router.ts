@@ -28,6 +28,8 @@ import {
   PluginErrorCodes,
   REQUEST_MAX_TIMEOUT,
 } from "@shared/defaults/plugin-api";
+import { findPlatformQuality } from "@shared/utils/platformQuality";
+import { platformFromSourceKey } from "@shared/utils/qualityProvenance";
 import { pluginRegistry, type PluginRuntime } from "./registry";
 import { pluginHost } from "./host-process";
 import { pluginLog } from "@main/utils/logger";
@@ -83,9 +85,15 @@ export const resolveUrl = async (args: PluginResolveUrlArgs): Promise<MusicUrlRe
     });
   }
   // 不卡 inited 声明，调到 sandbox 让脚本自己判 source；handler 没注册时 sandbox 端回 ACTION_UNREGISTERED
+  // qualitySelection 只转发目录里能对上当前来源平台的具体选择，防止跨平台标识误导脚本
+  const sourcePlatform = platformFromSourceKey(args.source);
+  const selection = args.qualitySelection
+    ? findPlatformQuality(args.qualitySelection, sourcePlatform)
+    : undefined;
   const params: MusicUrlReq = {
     source: args.source ?? "",
     quality: args.quality ?? "hq",
+    ...(selection ? { qualitySelection: selection.id } : {}),
     musicInfo: args.musicInfo,
   };
   // 调用方可传更长超时（超时软失败后的重试）；上限 REQUEST_MAX_TIMEOUT 兜底

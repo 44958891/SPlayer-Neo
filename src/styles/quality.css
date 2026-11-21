@@ -1,0 +1,59 @@
+.quality-tone {
+  --quality-base: #65717f;
+  --quality-light: #b4bfcd;
+  color: var(--quality-base);
+}
+
+.quality-tone--higher {
+  --quality-base: #526d89;
+  --quality-light: #b1c6dd;
+}
+
+.quality-tone--hq {
+  --quality-base: #3b6797;
+  --quality-light: #9bbfee;
+}
+
+.quality-tone--lossless {
+  --quality-base: #277b64;
+  --quality-light: #8ad0b7;
+}
+
+.quality-tone--hi-res {
+  --quality-base: #936322;
+  --quality-light: #e3bc7c;
+}
+
+.quality-tone--premium {
+  --quality-base: #925b3e;
+  --quality-light: #e3b295;
+}
+
+.quality-tone--surround {
+  --quality-base: #795695;
+  --quality-light: #c6ace0;
+}
+
+.quality-tone--spatial,
+.quality-tone--spatial-plus {
+  --quality-base: #74539d;
+  --quality-light: #c7adeb;
+}
+
+.quality-tone--master {
+  --quality-base: #8b6828;
+  --quality-light: #e4c78f;
+}
+
+.dark .quality-tone {
+  color: var(--quality-light);
+}
+
+.quality-tone.quality-tone--warning {
+  --quality-base: #a35716;
+  --quality-light: #f1bc78;
+}
+
+.quality-tone.quality-tone--cover {
+  color: color-mix(in srgb, rgb(var(--s-cover)) 40%, var(--quality-light));
+}

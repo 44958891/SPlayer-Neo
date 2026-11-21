@@ -594,7 +594,122 @@
     "multiChannel": "Multi-channel",
     "tempoPitch": "Speed & Pitch",
     "limiter": "Output Limiter",
-    "resampling": "Resampling"
+    "resampling": "Resampling",
+    "level": {
+      "lq": "Standard",
+      "sq": "Higher",
+      "hq": "Extreme",
+      "lossless": "Lossless",
+      "hi-res": "Hi-Res Lossless",
+      "jyeffect": "Surround Audio",
+      "sky": "Spatial Audio",
+      "jymaster": "Hi-Res Master"
+    },
+    "option": {
+      "netease": {
+        "standard": "Standard 128K",
+        "higher": "Higher 192K",
+        "hq": "Extreme HQ",
+        "lossless": "Lossless SQ",
+        "hi-res": "Hi-Res Lossless",
+        "surround": "HD Vivid Audio",
+        "spatial": "Immersive Surround",
+        "master": "Hi-Res Master"
+      },
+      "qqmusic": {
+        "standard": "Standard 128K",
+        "hq": "High Quality 320K",
+        "lossless": "Lossless SQ",
+        "hi-res": "Hi-Res",
+        "premium": "Premium Sound 2.0",
+        "spatial": "Premium Spatial Audio",
+        "master": "Premium Master 4.0",
+        "spatial-plus": "Premium Spatial Audio 2.0"
+      },
+      "kugou": {
+        "standard": "Standard 128K",
+        "hq": "High Quality 320K",
+        "lossless": "Lossless SQ",
+        "hi-res": "Hi-Res",
+        "spatial": "Viper Spatial Audio",
+        "master": "Viper Ultra HD"
+      },
+      "kuwo": {
+        "standard": "Standard 128K",
+        "hq": "High Quality 320K",
+        "lossless": "Lossless SQ",
+        "hi-res": "Hi-Res",
+        "premium": "Premium Sound 2.0",
+        "spatial": "Premium Spatial Audio",
+        "master": "Master Quality"
+      },
+      "migu": {
+        "standard": "Standard 128K",
+        "hq": "High Quality 320K",
+        "lossless": "Lossless SQ",
+        "hi-res": "Hi-Res",
+        "spatial": "Premium Spatial Audio",
+        "master": "Premium Master"
+      }
+    },
+    "selection": {
+      "unsupported": "The current platform does not support the selected quality target",
+      "pluginRequired": "Requires a source plugin",
+      "switchHint": "Options follow the track platform; delivered quality depends on the source response and file specs",
+      "playbackDefault": "Default playback target",
+      "downloadDefault": "Default download target",
+      "platform": "Platform",
+      "requested": "Requested quality",
+      "unavailable": "Not declared by the current source",
+      "allPlatforms": "All platforms",
+      "batchUnsupported": "{count} tracks were not queued because their platform does not support the target",
+      "defaultWithQuality": "Use default · {quality}",
+      "matchedTarget": "{platform} · {quality}",
+      "fileTarget": "File specification target",
+      "unconfirmed": "The source did not confirm the selected tier",
+      "defaultHint": "A shared default maps to the corresponding platform tier; local files retain their own source and quality"
+    },
+    "tier": {
+      "netease-master": "Hi-Res Master",
+      "netease-sky": "Immersive Surround (Sky)",
+      "netease-surround": "HD Vivid Audio (JYEffect)",
+      "qq-master": "Premium Master",
+      "qq-master-4": "Premium Master 4.0",
+      "qq-premium": "Premium Sound 2.0",
+      "qq-spatial": "Premium Spatial Audio",
+      "kuwo-master": "Kuwo Master",
+      "kuwo-premium": "Kuwo Premium 2.0",
+      "kuwo-spatial": "Kuwo Spatial Audio",
+      "kugou-master": "Viper Ultra HD",
+      "kugou-spatial": "Viper Spatial Audio",
+      "migu-master": "Migu Master",
+      "migu-premium": "Migu Premium Audio",
+      "migu-spatial": "Migu Spatial Audio",
+      "qq-spatial-2": "Premium Spatial Audio 2.0",
+      "kuwo-master-quality": "Master Quality"
+    },
+    "evidence": {
+      "measured": "Specs measured from the decoded file",
+      "response": "Confirmed by source API response",
+      "plugin": "Declared by the source plugin, not independently verified by decode",
+      "request": "Requested tier only, not confirmed by the source",
+      "filename": "Branded tier inferred from filename, not independently confirmed",
+      "catalog": "From track catalog info, not measured"
+    },
+    "tooltip": {
+      "mismatch": "Measured specs contradict the declared tier",
+      "nativeTier": "Source tier: {tier}"
+    },
+    "playback": {
+      "targetUnavailable": "The source cannot provide the selected tier; the previous playback quality was retained",
+      "below": "Requested {requested}, received {actual}; the source did not meet the target",
+      "unconfirmed": "Requested {requested}; the source did not confirm that tier. Measured specs: {actual}",
+      "requested": "Requested tier: {quality}",
+      "actual": "Delivered tier: {quality}",
+      "sourceChannel": "Tier reported by the source plugin; platform identifies the request channel, not independently verified audio origin",
+      "checking": "Checking the delivered quality",
+      "retained": "No matching source found; continuing with the available quality"
+    }
   },
   "playlist": {
     "title": "Playlist",

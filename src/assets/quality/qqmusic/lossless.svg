@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="57" height="33" viewBox="0 0 57 33" fill="none">
+  <!-- SQ 无损高清版本 v2 -->
+  <defs>
+    <linearGradient id="qq-lossless-grad-v2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color: #5fe3a8; stop-opacity: 1" />
+      <stop offset="100%" style="stop-color: #00aa55; stop-opacity: 1" />
+    </linearGradient>
+  </defs>
+
+  <!-- 背景圆角矩形 -->
+  <rect
+    x="0.5"
+    y="0.5"
+    width="56"
+    height="32"
+    rx="5"
+    fill="url(#qq-lossless-grad-v2)"
+    stroke="#006633"
+    stroke-width="1"
+    opacity="1"
+  />
+
+  <!-- SQ 文字 - 增加字重 -->
+  <text
+    x="28.5"
+    y="23"
+    font-family="Arial, 'Microsoft YaHei', sans-serif"
+    font-size="19"
+    font-weight="900"
+    fill="#FFFFFF"
+    text-anchor="middle"
+    letter-spacing="0.5"
+  >
+    SQ
+  </text>
+
+  <!-- 音波装饰 - 更清晰 -->
+  <path
+    d="M 8 16.5 Q 12 12, 16 16.5 Q 20 21, 24 16.5"
+    stroke="#FFFFFF"
+    stroke-width="1.8"
+    fill="none"
+    opacity="0.4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

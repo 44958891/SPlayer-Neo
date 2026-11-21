@@ -1,8 +1,8 @@
 import type { AudioQuality } from "../types/player";
 
-/** 音质档位（与渲染端 src/utils/quality.ts 保持同口径，主进程侧轻量复制） */
-export type QualityLevel =
-  "jymaster" | "sky" | "jyeffect" | "hi-res" | "lossless" | "hq" | "sq" | "lq";
+import type { QualityLevel } from "../types/quality";
+
+export type { QualityLevel } from "../types/quality";
 
 /** 档位由低到高 */
 export const QUALITY_ORDER: readonly QualityLevel[] = [

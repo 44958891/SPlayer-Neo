@@ -5,6 +5,7 @@
 
 import type { Track } from "./player";
 import type { PluginQuality } from "./plugin";
+import type { QualityProvenance, ResolvedAudioFile } from "./quality";
 
 /** 下载歌词文件保存格式：逐行 LRC / 逐字增强 LRC */
 export type DownloadLyricFormat = "lrc" | "enhanced-lrc";
@@ -36,6 +37,8 @@ export interface DownloadRequest {
   taskId: string;
   track: Track;
   qualityLevel: PluginQuality;
+  /** 当前歌曲平台的具体目标，不能仅用通用等级替代 */
+  qualitySelection?: string;
   /** 已解析的音频 URL，批量整批入队时可缺省 */
   url?: string;
   /** 已知格式（netease 的 flac/mp3），用于确定扩展名 */
@@ -60,6 +63,8 @@ export interface DownloadRequest {
    * 缺省时下限取自原文件探测结果；原文件已损坏（探测不出档位）时可用此字段强制要求目标档位
    */
   minLevel?: PluginQuality;
+  /** 本次解析来源的音质依据，随文件落盘写入 track_json 供回放识别 */
+  qualityProvenance?: QualityProvenance;
 }
 
 /** 主进程持有的下载任务 */
@@ -68,6 +73,8 @@ export interface DownloadTask {
   status: DownloadStatus;
   track: Track;
   qualityLevel: PluginQuality;
+  /** 当前歌曲平台的具体目标，不能仅用通用等级替代 */
+  qualitySelection?: string;
   /** 已接收字节 */
   received: number;
   /** 总字节（未知为 0） */
@@ -97,12 +104,21 @@ export interface DownloadProgress {
 
 /** 渲染层回传的解析结果（补全 DownloadRequest 缺省的网络字段，url 必填） */
 export type DownloadResolution = Required<Pick<DownloadRequest, "url">> &
-  Pick<DownloadRequest, "declaredFormat" | "declaredSize" | "lyricText" | "ttmlText">;
+  Pick<
+    DownloadRequest,
+    "declaredFormat" | "declaredSize" | "lyricText" | "ttmlText" | "qualityProvenance"
+  >;
 
 /** 主进程 → 渲染层的解析请求载荷（轮到下载但缺少 URL 时下发） */
 export type DownloadResolvePayload = Pick<
   DownloadRequest,
-  "taskId" | "track" | "qualityLevel" | "tagOptions" | "coverUrl" | "lyricFileFormat"
+  | "taskId"
+  | "track"
+  | "qualityLevel"
+  | "qualitySelection"
+  | "tagOptions"
+  | "coverUrl"
+  | "lyricFileFormat"
 >;
 
 /** 入队结果；ok 为 false 时 reason 说明原因 */
@@ -125,6 +141,10 @@ export interface DownloadApi {
   clearFinished: () => Promise<void>;
   list: () => Promise<DownloadTask[]>;
   lookup: (track: DownloadTrackIdentity) => Promise<string | null>;
+  /** 查找已下载文件及随存的音质依据（size+mtime 与当前文件一致才回传 provenance） */
+  lookupInfo: (track: DownloadTrackIdentity) => Promise<ResolvedAudioFile | null>;
+  /** 按精确路径查找已下载文件及随存的音质依据（文件被替换时 provenance 降级 generic） */
+  lookupInfoByPath: (filePath: string) => Promise<ResolvedAudioFile | null>;
   pickDir: () => Promise<{ ok: boolean; dir: string; reason?: "canceled" }>;
   getDir: () => Promise<string>;
   resetDir: () => Promise<string>;

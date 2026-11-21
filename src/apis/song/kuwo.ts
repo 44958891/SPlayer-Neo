@@ -1,10 +1,17 @@
 import type { Track } from "@shared/types/player";
 import { ErrorCode } from "@shared/types/errors";
+import type { QualityProvenance } from "@shared/types/quality";
 import { getQualityLevel, QUALITY_ORDER, type QualityLevel } from "@/utils/quality";
 import { kuwoCall } from "@/apis/kuwo";
 
 export type KuwoPlayUrlResult =
-  | { available: true; url: string; isTrial: boolean; level: QualityLevel }
+  | {
+      available: true;
+      url: string;
+      isTrial: boolean;
+      level: QualityLevel;
+      qualityProvenance?: QualityProvenance;
+    }
   | { available: false; errorCode: ErrorCode };
 
 interface SongUrlResponse {
@@ -33,7 +40,20 @@ export const resolveKuwoUrl = async (
   try {
     const result = await kuwoCall<SongUrlResponse>("song_url", { id: track.id, level: clamped });
     if (result.code === 200 && result.url) {
-      return { available: true, url: result.url, isTrial: false, level: clamped };
+      // antiserver 返回档位即请求 clamp 档（请求证据），不虚构至臻母带等品牌档
+      const qualityProvenance: QualityProvenance = {
+        provider: "official",
+        platform: "kuwo",
+        evidence: "request",
+        level: clamped,
+      };
+      return {
+        available: true,
+        url: result.url,
+        isTrial: false,
+        level: clamped,
+        qualityProvenance,
+      };
     }
   } catch (error) {
     console.warn("[kuwo] resolve URL failed:", error);

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Track } from "@shared/types/player";
+import type { QualityProvenance } from "@shared/types/quality";
 
 const mocks = vi.hoisted(() => {
   const track = { id: "next", source: "netease", title: "Next", artists: [], duration: 1000 };
@@ -9,6 +10,7 @@ const mocks = vi.hoisted(() => {
     enrichTrack: vi.fn(),
     updateLyricIndex: vi.fn(),
     setLyric: vi.fn(),
+    setPlaybackQuality: vi.fn(),
   };
   return {
     track,
@@ -40,6 +42,7 @@ const mocks = vi.hoisted(() => {
     load: vi.fn(),
     stop: vi.fn(),
     invalidate: vi.fn(),
+    assess: vi.fn(),
   };
 });
 vi.mock("./events", () => ({ handleEvent: vi.fn() }));
@@ -100,19 +103,28 @@ vi.mock("@/services/nextTrackPreloader", () => ({
   scheduleNextTrackPreload: vi.fn(),
 }));
 vi.mock("@/composables/useFavorite", () => ({ useFavorite: vi.fn() }));
-vi.mock("@/composables/useToast", () => ({ toast: { info: vi.fn() } }));
+vi.mock("@/composables/useToast", () => ({
+  toast: { info: vi.fn(), warning: vi.fn(), error: vi.fn() },
+}));
+vi.mock("@shared/utils/playbackQuality", () => ({
+  assessPlaybackQuality: mocks.assess,
+}));
 vi.mock("@/utils/color", () => ({ extractColorFromUrl: vi.fn() }));
 vi.mock("@/utils/errors", () => ({
   handleError: vi.fn(),
   isSkippableError: (code: string) => code === "FILE_DECODE_ERROR",
 }));
 vi.mock("@/utils/preset/skipKeywords", () => ({ shouldSkipKeywordTrack: () => false }));
-vi.mock("@/i18n", () => ({ default: { global: { t: (value: string) => value } } }));
+vi.mock("@/i18n", () => ({
+  default: { global: { t: (value: string) => value, te: () => true } },
+}));
 
 describe("切歌消费真实预载", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
+    // 模块转换属于测试准备，避免首个用例超时后在下一用例继续消费异步回包
+    await import("./index");
     mocks.media.track = { ...mocks.track, id: "old" };
     mocks.status.currentTrack = { ...mocks.track, id: "old" };
     mocks.status.playIndex = 0;
@@ -234,6 +246,32 @@ describe("切歌消费真实预载", () => {
     await pending;
   });
 
+  it.each([false, true])("当前解析或预载的音质依据传入加载，预载=%s", async (preloaded) => {
+    const qualityProvenance: QualityProvenance = {
+      provider: "plugin",
+      pluginId: "p",
+      platform: "qqmusic",
+      nativeTier: "臻品母带2.0",
+      level: "jymaster",
+      evidence: "plugin",
+    };
+    const source = {
+      source: "https://music/new-source",
+      fromCache: false,
+      provider: "plugin",
+      pluginId: "p",
+      qualityProvenance,
+    };
+    mocks.consume.mockReturnValue(preloaded ? { preparedId: "quality-slot", source } : null);
+    mocks.resolve.mockReset().mockResolvedValue(source);
+    const { playFrom } = await import("./index");
+    await playFrom([mocks.track as Track]);
+    expect(mocks.load).toHaveBeenCalledWith(
+      source.source,
+      expect.objectContaining({ qualityProvenance }),
+    );
+  });
+
   it("准备完成的槽位直接交给 load，不能先 stop 清除它", async () => {
     mocks.consume.mockReturnValue({
       preparedId: "prepared",
@@ -248,6 +286,21 @@ describe("切歌消费真实预载", () => {
     );
     expect(mocks.resolve).not.toHaveBeenCalled();
     expect(mocks.transition).not.toHaveBeenCalled();
+  });
+
+  it("显式选择新音质时绕过下载文件与旧缓存，按选择重新取源", async () => {
+    mocks.status.position = 0;
+    mocks.resolve.mockResolvedValue({
+      source: "https://music/new-quality",
+      provider: "official",
+      fromCache: false,
+    });
+    const { reloadCurrentTrack } = await import("./index");
+    expect(await reloadCurrentTrack(false, true)).toBe(true);
+    expect(mocks.resolve).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ skipDownloaded: true, skipCache: true }),
+    );
   });
 
   it("重载当前音源后作废旧槽位并重新准备下一首", async () => {
@@ -321,9 +374,11 @@ describe("切歌消费真实预载", () => {
 });
 
 describe("交叉过渡的队列交接", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
+    // 模块转换属于测试准备，避免首个用例超时后在下一用例继续消费异步回包
+    await import("./index");
     mocks.media.track = { ...mocks.track, id: "old" };
     mocks.status.currentTrack = { ...mocks.track, id: "old" };
     mocks.status.playIndex = 0;
@@ -349,6 +404,34 @@ describe("交叉过渡的队列交接", () => {
     Object.assign(window, {
       api: { player: { load: mocks.load, stop: mocks.stop, transitionPrepared: mocks.transition } },
     });
+  });
+
+  it("交叉交接传递的是下一首已准备音源的档位依据", async () => {
+    const qualityProvenance: QualityProvenance = {
+      provider: "official",
+      platform: "netease",
+      nativeTier: "sky",
+      level: "sky",
+      evidence: "response",
+    };
+    mocks.peek.mockReturnValue({
+      preparedId: "quality-slot",
+      source: {
+        source: "C:/cache/spatial.bin",
+        fromCache: true,
+        provider: "cache",
+        qualityProvenance,
+      },
+    });
+    const { trySmartTransition } = await import("./index");
+    await trySmartTransition(5000);
+    expect(mocks.transition).toHaveBeenCalledWith(
+      "quality-slot",
+      "C:/cache/spatial.bin",
+      5000,
+      "standard",
+      expect.objectContaining({ qualityProvenance }),
+    );
   });
 
   it("交接成功后更新队列和曲目，且不重新加载输出流", async () => {
@@ -576,5 +659,293 @@ describe("交叉过渡的队列交接", () => {
     finishStop({ success: true });
     await stopping;
     expect(mocks.status.state).toBe("stopped");
+  });
+});
+
+describe("播放档位校验与降档兜底", () => {
+  /** 主进程回传的未达标结论 */
+  const below = {
+    selection: "netease:jymaster",
+    platform: "netease",
+    state: "below",
+    actualLevel: "lossless",
+  };
+  /** 主进程回传的达标结论 */
+  const met = {
+    selection: "netease:jymaster",
+    platform: "netease",
+    state: "met",
+    actualLevel: "jymaster",
+  };
+  const okResult = (detail: Record<string, unknown>) => ({
+    success: true,
+    data: { detail, mediaInfo: { duration: 1000 } },
+  });
+
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    // 模块转换属于测试准备，避免首个用例超时后在下一用例继续消费异步回包
+    await import("./index");
+    mocks.media.track = { ...mocks.track, id: "old" };
+    mocks.status.currentTrack = mocks.track;
+    mocks.status.playIndex = 0;
+    mocks.status.position = 0;
+    mocks.status.state = "playing";
+    mocks.status.trackLoading = false;
+    mocks.consume.mockReturnValue(null);
+    mocks.stop.mockResolvedValue({ success: true });
+    Object.assign(window, {
+      api: { player: { load: mocks.load, stop: mocks.stop, seek: vi.fn() } },
+    });
+  });
+
+  it("官方交付未达标时换到下一个来源再加载", async () => {
+    mocks.resolve
+      .mockResolvedValueOnce({
+        source: "https://music/official",
+        fromCache: false,
+        provider: "official",
+        qualitySelection: "netease:jymaster",
+      })
+      .mockResolvedValueOnce({
+        source: "https://music/plugin",
+        fromCache: false,
+        provider: "plugin",
+        pluginId: "p",
+        qualitySelection: "netease:jymaster",
+      });
+    mocks.load
+      .mockResolvedValueOnce(okResult({ playbackQuality: below }))
+      .mockResolvedValueOnce(okResult({ playbackQuality: met }));
+    const { playFrom } = await import("./index");
+    await playFrom([mocks.track as Track]);
+    expect(mocks.load).toHaveBeenCalledTimes(2);
+    expect(mocks.resolve.mock.calls[1]?.[1]).toMatchObject({ skipOfficialOnline: true });
+    expect(mocks.load.mock.calls[1]?.[1]).toMatchObject({
+      qualitySelection: "netease:jymaster",
+    });
+    const { handleError } = await import("@/utils/errors");
+    expect(handleError).not.toHaveBeenCalled();
+  });
+
+  it("缓存内容与请求档位不符时作废缓存读取重新解析", async () => {
+    mocks.resolve
+      .mockResolvedValueOnce({
+        source: "C:/cache/old.bin",
+        fromCache: true,
+        provider: "cache",
+        qualitySelection: "netease:jymaster",
+      })
+      .mockResolvedValueOnce({
+        source: "https://music/fresh",
+        fromCache: false,
+        provider: "official",
+        qualitySelection: "netease:jymaster",
+      });
+    mocks.load
+      .mockResolvedValueOnce(okResult({ playbackQuality: below }))
+      .mockResolvedValueOnce(okResult({ playbackQuality: met }));
+    const { playFrom } = await import("./index");
+    await playFrom([mocks.track as Track]);
+    expect(mocks.resolve.mock.calls[1]?.[1]).toMatchObject({ skipCache: true });
+    expect(mocks.load).toHaveBeenCalledTimes(2);
+    expect(mocks.load.mock.calls[1]?.[1]).toMatchObject({ preparedId: undefined });
+  });
+
+  it("换源耗尽的降档兜底保留可播来源，不写缓存也不跳曲", async () => {
+    const cacheRequest = vi.fn().mockResolvedValue("C:/cache/new.bin");
+    mocks.resolve
+      .mockResolvedValueOnce({
+        source: "https://music/official",
+        fromCache: false,
+        provider: "official",
+        qualitySelection: "netease:jymaster",
+        cacheRequest,
+      })
+      .mockImplementationOnce((_track: Track, options: { onError: (e: string) => void }) => {
+        options.onError("NO_PLUGIN_AVAILABLE");
+        return Promise.resolve(null);
+      });
+    mocks.load.mockResolvedValue(okResult({ playbackQuality: below }));
+    const timer = vi.spyOn(globalThis, "setTimeout");
+    const { playFrom } = await import("./index");
+    await playFrom([mocks.track as Track]);
+    const { handleError } = await import("@/utils/errors");
+    const { toast } = await import("@/composables/useToast");
+    const cacheScheduler = await import("@/services/cacheScheduler");
+    expect(mocks.resolve).toHaveBeenCalledTimes(2);
+    expect(mocks.load).toHaveBeenCalledTimes(1);
+    expect(handleError).not.toHaveBeenCalled();
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    expect(cacheScheduler.schedule).not.toHaveBeenCalled();
+    expect(timer.mock.calls.some((call) => call[1] === 1000)).toBe(false);
+  });
+
+  it("兜底结果之后有失败加载时先重载兜底音源再返回", async () => {
+    mocks.resolve
+      .mockResolvedValueOnce({
+        source: "https://music/official",
+        fromCache: false,
+        provider: "official",
+        qualitySelection: "netease:jymaster",
+      })
+      .mockResolvedValueOnce({
+        source: "https://music/plugin",
+        fromCache: false,
+        provider: "plugin",
+        pluginId: "p",
+        qualitySelection: "netease:jymaster",
+      })
+      .mockImplementationOnce((_track: Track, options: { onError: (e: string) => void }) => {
+        options.onError("NO_PLUGIN_AVAILABLE");
+        return Promise.resolve(null);
+      });
+    mocks.load
+      .mockResolvedValueOnce(okResult({ playbackQuality: below }))
+      .mockResolvedValueOnce({ success: false, error: "FILE_DECODE_ERROR" })
+      .mockResolvedValueOnce(okResult({ playbackQuality: below }));
+    const { playFrom } = await import("./index");
+    await playFrom([mocks.track as Track]);
+    // 插件源加载失败后，用官方降档源重载一次恢复引擎状态
+    expect(mocks.load).toHaveBeenCalledTimes(3);
+    expect(mocks.load.mock.calls[2]?.[0]).toBe("https://music/official");
+    expect(mocks.load.mock.calls[2]?.[1]).toMatchObject({ qualitySelection: "netease:jymaster" });
+  });
+
+  it("显式重载无提供者达标时恢复先前音源并提示目标不可达", async () => {
+    mocks.status.position = 5000;
+    mocks.status.currentSource = "https://music/old";
+    mocks.resolve.mockResolvedValue({
+      source: "https://music/new",
+      fromCache: false,
+      provider: "official",
+      qualitySelection: "netease:jymaster",
+    });
+    mocks.load.mockImplementation((source: string) =>
+      Promise.resolve(
+        source === "https://music/old" ? okResult({}) : okResult({ playbackQuality: below }),
+      ),
+    );
+    const seek = vi.fn().mockResolvedValue({ success: true });
+    const play = vi.fn().mockResolvedValue({ success: true });
+    Object.assign(window.api.player, { seek, play });
+    const { reloadCurrentTrack } = await import("./index");
+    const { toast } = await import("@/composables/useToast");
+    const cacheScheduler = await import("@/services/cacheScheduler");
+    expect(await reloadCurrentTrack(true, true)).toBe(false);
+    expect(toast.error).toHaveBeenCalledWith("quality.playback.targetUnavailable");
+    // 恢复加载为暂停态续播（autoPlay=false）；suppressErrorToast 是运行时选项不随 IPC 下发
+    expect(mocks.load).toHaveBeenCalledWith(
+      "https://music/old",
+      expect.objectContaining({ autoPlay: false }),
+    );
+    expect(seek).toHaveBeenCalledWith(5000);
+    expect(play).toHaveBeenCalledOnce();
+    expect(cacheScheduler.schedule).not.toHaveBeenCalled();
+  });
+
+  it("达到请求档位的结果按请求档位写入缓存", async () => {
+    const cacheRequest = vi.fn().mockResolvedValue("C:/cache/new.bin");
+    mocks.resolve.mockResolvedValue({
+      source: "https://music/official",
+      fromCache: false,
+      provider: "official",
+      qualitySelection: "netease:jymaster",
+      cacheRequest,
+    });
+    mocks.load.mockResolvedValue(okResult({ playbackQuality: met }));
+    const { playFrom } = await import("./index");
+    await playFrom([mocks.track as Track]);
+    const cacheScheduler = await import("@/services/cacheScheduler");
+    expect(cacheScheduler.schedule).toHaveBeenCalledWith(mocks.track.id, cacheRequest);
+    const { toast } = await import("@/composables/useToast");
+    expect(toast.warning).not.toHaveBeenCalled();
+  });
+
+  it("缺失解码参数的旧加载结果不参与档位校验", async () => {
+    mocks.resolve.mockResolvedValue({
+      source: "https://music/official",
+      fromCache: false,
+      provider: "official",
+      qualitySelection: "netease:jymaster",
+    });
+    mocks.load.mockResolvedValue(okResult({}));
+    const { playFrom } = await import("./index");
+    await playFrom([mocks.track as Track]);
+    expect(mocks.load).toHaveBeenCalledTimes(1);
+    expect(mocks.assess).not.toHaveBeenCalled();
+    const { toast } = await import("@/composables/useToast");
+    expect(toast.warning).not.toHaveBeenCalled();
+  });
+
+  it("主进程未下结论时用解码参数本地复验", async () => {
+    const decoded = {
+      quality: {
+        codec: "flac",
+        sampleRate: 44100,
+        bitsPerSample: 16,
+        bitRate: 6000000,
+        channels: 2,
+      },
+      externalLyrics: [],
+    };
+    mocks.resolve
+      .mockResolvedValueOnce({
+        source: "https://music/official",
+        fromCache: false,
+        provider: "official",
+        qualitySelection: "netease:jymaster",
+      })
+      .mockResolvedValueOnce({
+        source: "https://music/plugin",
+        fromCache: false,
+        provider: "plugin",
+        pluginId: "p",
+        qualitySelection: "netease:jymaster",
+      });
+    mocks.load.mockResolvedValue(okResult(decoded));
+    mocks.assess.mockReturnValueOnce(below).mockReturnValueOnce(met);
+    const { playFrom } = await import("./index");
+    await playFrom([mocks.track as Track]);
+    expect(mocks.assess).toHaveBeenCalledWith(
+      expect.objectContaining({ selection: "netease:jymaster", source: "official" }),
+    );
+    expect(mocks.load).toHaveBeenCalledTimes(2);
+  });
+
+  it("下载文件播放不受档位校验约束", async () => {
+    mocks.resolve.mockResolvedValue({
+      source: "C:/downloads/song.flac",
+      fromCache: false,
+      provider: "download",
+      qualitySelection: "netease:jymaster",
+    });
+    mocks.load.mockResolvedValue(okResult({ playbackQuality: below }));
+    const { playFrom } = await import("./index");
+    await playFrom([mocks.track as Track]);
+    expect(mocks.resolve).toHaveBeenCalledTimes(1);
+    expect(mocks.load).toHaveBeenCalledTimes(1);
+    expect(mocks.assess).not.toHaveBeenCalled();
+  });
+
+  it("预载音源携带的具体选择随加载下发", async () => {
+    mocks.consume.mockReturnValue({
+      preparedId: "slot",
+      source: {
+        source: "C:/cache/next.bin",
+        fromCache: true,
+        provider: "cache",
+        qualitySelection: "netease:jymaster",
+      },
+    });
+    mocks.load.mockResolvedValue(okResult({ playbackQuality: met }));
+    const { playFrom } = await import("./index");
+    await playFrom([mocks.track as Track]);
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    expect(mocks.load).toHaveBeenCalledWith(
+      "C:/cache/next.bin",
+      expect.objectContaining({ preparedId: "slot", qualitySelection: "netease:jymaster" }),
+    );
   });
 });

@@ -1,6 +1,7 @@
 import { useSettingsStore } from "@/stores/settings";
 import type { SettingCategory } from "@/types/settings-schema";
 import DeviceSelector from "@/components/settings/custom/DeviceSelector.vue";
+import PlatformQualityConfig from "@/components/settings/custom/PlatformQualityConfig.vue";
 import { isWin } from "@/utils/config";
 import IconLucidePlay from "~icons/lucide/play";
 import { getActiveDeviceId } from "@/core/player";
@@ -68,19 +69,20 @@ const playerCategory: SettingCategory = {
       items: [
         {
           key: "songLevel",
-          type: "select",
-          binding: { store: "settings", path: "player.songLevel" },
-          options: [
-            { value: "jymaster", labelKey: "settings.songLevel.jymaster" },
-            { value: "sky", labelKey: "settings.songLevel.sky" },
-            { value: "jyeffect", labelKey: "settings.songLevel.jyeffect" },
-            { value: "lq", labelKey: "settings.songLevel.lq" },
-            { value: "sq", labelKey: "settings.songLevel.sq" },
-            { value: "hq", labelKey: "settings.songLevel.hq" },
-            { value: "lossless", labelKey: "settings.songLevel.lossless" },
-            { value: "hi-res", labelKey: "settings.songLevel.hi-res" },
-          ],
+          type: "custom",
+          component: PlatformQualityConfig,
+          componentProps: { mode: "playback" },
           defaultValue: "hq",
+          keywords: [
+            "settings.songLevel.lq",
+            "settings.songLevel.sq",
+            "settings.songLevel.hq",
+            "settings.songLevel.lossless",
+            "settings.songLevel.hi-res",
+            "settings.songLevel.jyeffect",
+            "settings.songLevel.sky",
+            "settings.songLevel.jymaster",
+          ],
         },
         {
           key: "allowTrialPlay",

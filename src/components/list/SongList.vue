@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import type { Artist, PlaybackContext, Track, TrackSource } from "@shared/types/player";
+import type {
+  Artist,
+  AudioQuality,
+  PlaybackContext,
+  Track,
+  TrackSource,
+} from "@shared/types/player";
+import type { QualityProvenance } from "@shared/types/quality";
 import type { CollectionType } from "@/types/collection";
 import type { SortField } from "@/types/list";
 import { sortTracks } from "@/utils/trackSort";
@@ -15,7 +22,6 @@ import { usePlaylistPicker } from "@/composables/usePlaylistPicker";
 import { useFloatingPlayerBar } from "@/composables/useFloatingPlayerBar";
 import { formatTime } from "@/utils/time";
 import { formatFileSize } from "@/utils/format";
-import { getQualityLevel } from "@/utils/quality";
 import { buildLocalMatchIndex, findLocalMatch, type LocalMatchIndex } from "@/utils/localMatch";
 import { useLibraryStore } from "@/stores/library";
 import QualityTag from "@/components/ui/QualityTag.vue";
@@ -102,6 +108,36 @@ const { isFloatingBar: isFloatingPlayerBar, PLAYER_BAR_GAP } = useFloatingPlayer
 
 /** 当前播放歌曲 ID */
 const playingId = computed(() => media.track?.id);
+
+/** 播放身份键：来源、平台 id、服务器与插件来源一致才算同一首歌 */
+const identityKey = (track: Track): string =>
+  `${track.source}:${track.id}:${track.serverId ?? ""}:${track.plugin?.pluginId ?? ""}:${track.plugin?.source ?? ""}`;
+
+/** 行内音质徽标数据 */
+interface RowQuality {
+  quality?: AudioQuality;
+  provenance?: QualityProvenance;
+  measured?: boolean;
+}
+
+/**
+ * 取行内音质徽标数据：播放中行且详情身份一致时用实测详情，避免换曲瞬间混入旧详情；
+ * 其余行用曲目目录数据（本地曲库的扫描参数视为实测）
+ * @param item - 当前行曲目
+ * @returns 徽标数据
+ */
+const rowQuality = (item: Track): RowQuality => {
+  const track = media.track;
+  const detail = media.detail;
+  if (track && detail && identityKey(track) === identityKey(item)) {
+    return { quality: detail.quality, provenance: detail.qualityProvenance, measured: true };
+  }
+  return {
+    quality: item.quality,
+    provenance: item.qualityProvenance,
+    measured: item.source === "local",
+  };
+};
 
 // 需要标「本地已有」时确保本地库已加载（用户可能直接进搜索页，没进过音乐库）
 watch(
@@ -323,7 +359,7 @@ const { items: contextMenuItems, handleSelect: onContextMenu } = useTrackMenu(co
     tagEditorTrack.value = track;
     tagEditorOpen.value = true;
   },
-  onDownload: (track, quality) => void enqueueDownload(track, { quality }),
+  onDownload: (track, opts) => void enqueueDownload(track, opts ?? {}),
 });
 
 /** 仅当右键命中歌曲行时放行上下文菜单 */
@@ -700,8 +736,8 @@ defineExpose({
                       {{ t("songList.localExists") }}
                     </span>
                     <QualityTag
-                      v-if="item.quality && !settings.preset.hideQualityTag"
-                      :level="getQualityLevel(item.quality)"
+                      v-if="rowQuality(item).quality && !settings.preset.hideQualityTag"
+                      v-bind="rowQuality(item)"
                       class="h-[18px]"
                     />
                     <span

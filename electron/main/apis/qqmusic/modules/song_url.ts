@@ -151,6 +151,8 @@ const songUrl: QMModule = async (params) => {
             id: mid,
             url: matched.url,
             level: matched.cand.level,
+            // 命中模板的文件名前缀作为原生档位证据；Q000 / RS01 为临时声明，未经实测证实
+            nativeTier: matched.cand.prefix,
             format: matched.cand.ext.replace(".", ""),
             isFallback: matched.cand.level !== targetLevel,
           },

@@ -115,6 +115,7 @@ export const defaultSystemConfig: SystemConfig = {
     enabled: false,
     dir: null,
     quality: "lossless",
+    qualitySelection: undefined,
     fileTemplate: "{artist} - {title}",
     folderScheme: "none",
     overwritePolicy: "rename",

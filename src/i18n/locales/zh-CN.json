@@ -594,7 +594,122 @@
     "multiChannel": "多声道",
     "tempoPitch": "变速变调",
     "limiter": "输出限幅器",
-    "resampling": "重采样"
+    "resampling": "重采样",
+    "level": {
+      "lq": "标准音质",
+      "sq": "较高音质",
+      "hq": "极高音质",
+      "lossless": "无损",
+      "hi-res": "高解析度无损",
+      "jyeffect": "环绕声",
+      "sky": "空间音频",
+      "jymaster": "超清母带"
+    },
+    "option": {
+      "netease": {
+        "standard": "标准 128K",
+        "higher": "较高 192K",
+        "hq": "极高 HQ",
+        "lossless": "无损 SQ",
+        "hi-res": "高解析度无损 Hi-Res",
+        "surround": "高清臻音",
+        "spatial": "沉浸环绕声",
+        "master": "超清母带"
+      },
+      "qqmusic": {
+        "standard": "标准 128K",
+        "hq": "高品 320K",
+        "lossless": "无损 SQ",
+        "hi-res": "高解析 Hi-Res",
+        "premium": "臻品音质 2.0",
+        "spatial": "臻品全景声",
+        "master": "臻品母带 4.0",
+        "spatial-plus": "臻品全景声 2.0"
+      },
+      "kugou": {
+        "standard": "标准 128K",
+        "hq": "高品 320K",
+        "lossless": "无损 SQ",
+        "hi-res": "高解析 Hi-Res",
+        "spatial": "蝰蛇全景声",
+        "master": "蝰蛇超清"
+      },
+      "kuwo": {
+        "standard": "标准 128K",
+        "hq": "高品 320K",
+        "lossless": "无损 SQ",
+        "hi-res": "Hi-Res 音质",
+        "premium": "至臻音质 2.0",
+        "spatial": "至臻全景声",
+        "master": "大师音质"
+      },
+      "migu": {
+        "standard": "标准 128K",
+        "hq": "高品 320K",
+        "lossless": "无损 SQ",
+        "hi-res": "高解析 Hi-Res",
+        "spatial": "至臻全景声",
+        "master": "至臻母带"
+      }
+    },
+    "selection": {
+      "unsupported": "当前平台不支持所选音质目标",
+      "pluginRequired": "需音源插件支持",
+      "switchHint": "选项随歌曲平台变化，实际档位以音源响应及文件参数为准",
+      "playbackDefault": "默认播放目标",
+      "downloadDefault": "默认下载目标",
+      "platform": "平台",
+      "requested": "请求音质",
+      "unavailable": "当前音源未声明支持",
+      "allPlatforms": "全部平台",
+      "batchUnsupported": "{count} 首歌曲所属平台不支持当前目标，未加入下载",
+      "defaultWithQuality": "跟随默认 · {quality}",
+      "matchedTarget": "{platform} · {quality}",
+      "fileTarget": "文件规格目标",
+      "unconfirmed": "音源未确认所选档位",
+      "defaultHint": "同一默认目标会映射到各平台对应档位；本地文件的来源与音质逐首保存"
+    },
+    "tier": {
+      "netease-master": "超清母带",
+      "netease-sky": "沉浸环绕声",
+      "netease-surround": "高清臻音",
+      "qq-master": "臻品母带",
+      "qq-master-4": "臻品母带 4.0",
+      "qq-premium": "臻品音质 2.0",
+      "qq-spatial": "臻品全景声",
+      "kuwo-master": "至臻母带",
+      "kuwo-premium": "至臻音质 2.0",
+      "kuwo-spatial": "至臻全景声",
+      "kugou-master": "蝰蛇超清",
+      "kugou-spatial": "蝰蛇全景声",
+      "migu-master": "至臻母带音质",
+      "migu-premium": "至臻音质",
+      "migu-spatial": "至臻全景声",
+      "qq-spatial-2": "臻品全景声 2.0",
+      "kuwo-master-quality": "大师音质"
+    },
+    "evidence": {
+      "measured": "参数来自文件解码实测",
+      "response": "音源接口响应已确认",
+      "plugin": "音源插件声明档位，未经解码独立验证",
+      "request": "仅请求档位，未获音源确认",
+      "filename": "依文件名推断品牌档位，尚未独立核实",
+      "catalog": "来自曲目目录信息，未实测"
+    },
+    "tooltip": {
+      "mismatch": "实测参数与声明档位不符",
+      "nativeTier": "来源档位：{tier}"
+    },
+    "playback": {
+      "targetUnavailable": "当前音源无法提供所选档位，已保留原播放音质",
+      "below": "目标为 {requested}，实际仅 {actual}；当前来源未达标",
+      "unconfirmed": "目标为 {requested}，当前来源未确认该档位；实际规格为 {actual}",
+      "requested": "目标档位：{quality}",
+      "actual": "实际档位：{quality}",
+      "sourceChannel": "档位由音源插件返回，平台为请求通道，未独立验证最终音频出处",
+      "checking": "正在检查实际交付档位",
+      "retained": "未找到达标来源，继续播放实际可用音质"
+    }
   },
   "playlist": {
     "title": "播放列表",

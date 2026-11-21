@@ -39,6 +39,9 @@ import { getMainWindow, setTaskbarProgress } from "@main/window";
 import { store } from "@main/store";
 import { appName, getSongCacheDir } from "@main/utils/config";
 import * as songCache from "@main/services/songCache";
+import { validateQualityProvenance } from "@shared/utils/qualityProvenance";
+import { assessPlaybackQuality } from "@shared/utils/playbackQuality";
+import { findPlatformQuality } from "@shared/utils/platformQuality";
 import { parseArtists, parseAlbum, formatArtists, artistNames } from "@main/utils/metadata";
 import { playerLog } from "@main/utils/logger";
 import { updatePowerBlocker, releasePowerBlocker } from "@main/utils/powerBlocker";
@@ -291,13 +294,24 @@ export const stopStreamingPlayer = (serverId: string): Promise<void> => {
  * @param seq - 用于忽略迟到的高清封面请求
  * @returns 渲染进程使用的曲目信息
  */
-const completeTrackLoad = (
+const completeTrackLoad = async (
   source: string,
   options: LoadOptions,
   meta: JsMusicMetadata,
   seq: number,
 ) => {
   const authoritative = options.meta ?? null;
+  let qualityProvenance = validateQualityProvenance(options.qualityProvenance);
+  if (authoritative?.source === "local") {
+    // 本地队列中的来源可能已过期，必须按当前文件重新匹配下载记录
+    const knownFile = !authoritative.cuePath
+      ? await (
+          await import("@main/services/downloadManager")
+        ).lookupDownloadedFileInfoByPath(source)
+      : null;
+    qualityProvenance = knownFile?.qualityProvenance;
+  }
+  if (seq !== loadSeq) return null;
   const autoPlay = options.autoPlay ?? true;
   const isRemote = authoritative != null && authoritative.source !== "local";
   const remoteCover = isRemote ? (authoritative.coverOriginal ?? authoritative.cover) : undefined;
@@ -358,11 +372,23 @@ const completeTrackLoad = (
     bitRate: meta.bitRate,
     codec: meta.codec,
   };
+  const selection = findPlatformQuality(options.qualitySelection);
+  const playbackQuality =
+    selection && authoritative?.source !== "local" && authoritative?.source !== "streaming"
+      ? assessPlaybackQuality({
+          selection: selection.id,
+          source: qualityProvenance?.provider ?? "cache",
+          quality,
+          provenance: qualityProvenance,
+        })
+      : undefined;
   return {
     success: true as const,
     data: {
       detail: {
         quality,
+        qualityProvenance,
+        playbackQuality,
         embeddedLyric: meta.embeddedLyric,
         externalLyrics: meta.externalLyrics,
       },
@@ -375,6 +401,7 @@ const completeTrackLoad = (
         duration: durationMs,
         cover: isRemote ? undefined : toCacheUrl(meta.cover),
         quality,
+        qualityProvenance,
       },
     },
   };
@@ -441,12 +468,13 @@ export const registerPlayerIpc = (): void => {
         cancelPreparedTrack(id);
         const inst = getPlayer();
         const state = inst.getStatus().state as PlayerState;
-        const result = completeTrackLoad(
+        const result = await completeTrackLoad(
           source,
           { ...options, autoPlay: state === "playing" },
           meta,
           completedSeq,
         );
+        if (!result || completedSeq !== loadSeq || inst !== getPlayer()) return { success: false };
         streamingPlayback.startStreamingPlayback(
           options.meta,
           streamingSource,
@@ -598,7 +626,9 @@ export const registerPlayerIpc = (): void => {
       }
       if (seq !== loadSeq || inst !== getPlayer()) return fail(ErrorCode.LOAD_SUPERSEDED);
       playerLog.debug(`加载成功: ${authoritative?.title ?? meta.title ?? source}`);
-      const result = completeTrackLoad(source, options, meta, seq);
+      const result = await completeTrackLoad(source, options, meta, seq);
+      if (!result || seq !== loadSeq || inst !== getPlayer())
+        return fail(ErrorCode.LOAD_SUPERSEDED);
       streamingPlayback.startStreamingPlayback(
         options.meta,
         streamingSource,
