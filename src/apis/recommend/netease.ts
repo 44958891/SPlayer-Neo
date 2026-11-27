@@ -2,8 +2,8 @@ import type { Track } from "@shared/types/player";
 import type { CoverItem } from "@/types/artist";
 import type { NeteaseSong, PersonalFmOptions } from "@/types/netease";
 import { netease as neteaseApi } from "@/apis/netease";
-import { songsToTracks, withPicSize, toPlaylist, toArtist, toAlbum } from "@/utils/format/netease";
-import { playlistToCoverItem, artistToCoverItem, albumToCoverItem } from "@/utils/format/coverItem";
+import { songsToTracks, withPicSize, toPlaylist, toArtist } from "@/utils/format/netease";
+import { playlistToCoverItem, artistToCoverItem } from "@/utils/format/coverItem";
 
 /** 每日推荐歌曲（每日 30 首，需登录） */
 export const fetchDailySongs = async (): Promise<Track[]> => {
@@ -95,6 +95,22 @@ export const fetchRecommendPlaylists = async (loggedIn: boolean): Promise<CoverI
     .map(playlistToCover);
 };
 
+/** 发现歌单候选池拉取数（公开 personalized 匿名实测支持 60） */
+const DISCOVERY_POOL_LIMIT = 60;
+
+/**
+ * 发现歌单候选池
+ * 走公开 personalized 接口（匿名可用、与登录账号无关），拉满候选供跨平台发现服务去重选取
+ * @param limit - 拉取数量，默认 60
+ * @returns 歌单封面卡片列表（已过滤雷达类个性化歌单）
+ */
+export const fetchDiscoveryPlaylistPool = async (
+  limit = DISCOVERY_POOL_LIMIT,
+): Promise<CoverItem[]> => {
+  const body = await neteaseApi.personalized<{ result?: RawRecommendPlaylist[] }>({ limit });
+  return (body?.result ?? []).filter((raw) => !raw.name.includes("雷达")).map(playlistToCover);
+};
+
 /** 雷达歌单固定 id（私人 / 会员 / 时光 / 乐迷 / 宝藏 / 新歌 / 神秘） */
 const RADAR_PLAYLIST_IDS = [
   "3136952023",
@@ -131,13 +147,4 @@ export const fetchRadarPlaylists = async (): Promise<CoverItem[]> => {
 export const fetchArtists = async (): Promise<CoverItem[]> => {
   const body = await neteaseApi.top_artists<{ artists?: unknown[] }>({ limit: HOME_GRID_LIMIT });
   return (body?.artists ?? []).map((raw) => artistToCoverItem(toArtist(raw)));
-};
-
-/**
- * 新碟上架
- * @returns 专辑封面卡片列表
- */
-export const fetchNewAlbums = async (): Promise<CoverItem[]> => {
-  const body = await neteaseApi.album_new<{ albums?: unknown[] }>({ limit: HOME_GRID_LIMIT });
-  return (body?.albums ?? []).map((raw) => albumToCoverItem(toAlbum(raw)));
 };

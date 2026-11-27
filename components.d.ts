@@ -155,6 +155,7 @@ declare module 'vue' {
     IconLucideShuffle: typeof import('~icons/lucide/shuffle')['default']
     IconLucideSkipBack: typeof import('~icons/lucide/skip-back')['default']
     IconLucideSkipForward: typeof import('~icons/lucide/skip-forward')['default']
+    IconLucideStar: typeof import('~icons/lucide/star')['default']
     IconLucideTextQuote: typeof import('~icons/lucide/text-quote')['default']
     IconLucideTrash: typeof import('~icons/lucide/trash')['default']
     IconLucideTrash2: typeof import('~icons/lucide/trash2')['default']

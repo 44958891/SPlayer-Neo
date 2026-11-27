@@ -365,6 +365,19 @@
         "title": "Revisit your favorites~",
         "subtitle": "All your liked music · {count} tracks"
       }
+    },
+    "discovery": {
+      "title": "Discover Playlists",
+      "subtitle": "Random picks from NetEase, QQ Music, Kugou, Kuwo and Migu",
+      "refresh": "Shuffle picks",
+      "refreshing": "Refreshing picks",
+      "refreshHint": "Discover another set of playlists",
+      "loadFailed": "Playlists are unavailable. Use the refresh button to try again",
+      "refreshFailed": "Refresh failed. Your previous picks have been kept",
+      "partial": "{platforms} is unavailable. Other sources supplied more playlists",
+      "shortfall": "{count} playlists are available. Refresh later for more",
+      "empty": "No playlists available. Shuffle picks to try again",
+      "unchanged": "No new playlists found. Your current picks have been kept"
     }
   },
   "login": {
@@ -2532,6 +2545,19 @@
         "copyId": "Copy Cloud ID",
         "copyUrl": "Share Cloud Link"
       }
+    },
+    "localFavorite": {
+      "add": "Favorite",
+      "done": "Favorited",
+      "addHint": "Save to local playlists",
+      "removeHint": "Remove local favorite",
+      "added": "Saved to local playlists",
+      "removed": "Local favorite removed",
+      "failed": "Could not save changes. Please try again",
+      "cloudAdd": "Subscribe on NetEase",
+      "cloudRemove": "Unsubscribe on NetEase",
+      "busy": "Saving",
+      "loadFailed": "Could not load playlist favorites. Please try again"
     }
   },
   "artist": {

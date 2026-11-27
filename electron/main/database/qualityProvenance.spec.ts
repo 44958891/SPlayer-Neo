@@ -78,7 +78,7 @@ describe("音质依据持久化", () => {
     ).run();
     d.pragma("user_version = 5");
     migrate(d);
-    expect(d.pragma("user_version", { simple: true })).toBe(8);
+    expect(d.pragma("user_version", { simple: true })).toBe(9);
     const cols = (d.prepare("PRAGMA table_info(song_cache)").all() as { name: string }[]).map(
       (c) => c.name,
     );

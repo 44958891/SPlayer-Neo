@@ -365,6 +365,19 @@
         "title": "听听你喜欢的音乐吧~",
         "subtitle": "你收藏的全部音乐 · {count} 首"
       }
+    },
+    "discovery": {
+      "title": "发现歌单",
+      "subtitle": "网易云 · QQ音乐 · 酷狗 · 酷我 · 咪咕，随机发现好音乐",
+      "refresh": "换一批",
+      "refreshing": "正在换一批",
+      "refreshHint": "随机换一批歌单",
+      "loadFailed": "暂时无法获取歌单，请点击右上角重试",
+      "refreshFailed": "刷新失败，已保留上一批歌单",
+      "partial": "{platforms} 暂时不可用，已由其他平台补充",
+      "shortfall": "当前可用 {count} 个歌单，稍后可刷新补充",
+      "empty": "暂时没有可用歌单，点击换一批重试",
+      "unchanged": "暂时没有发现新歌单，已保留当前列表"
     }
   },
   "login": {
@@ -2532,6 +2545,19 @@
         "copyId": "复制云盘 ID",
         "copyUrl": "分享云盘链接"
       }
+    },
+    "localFavorite": {
+      "add": "收藏",
+      "done": "已收藏",
+      "addHint": "收藏到本地歌单",
+      "removeHint": "取消本地收藏",
+      "added": "已收藏到本地歌单",
+      "removed": "已取消本地收藏",
+      "failed": "操作失败，请重试",
+      "cloudAdd": "收藏到网易云",
+      "cloudRemove": "取消网易云收藏",
+      "busy": "正在保存",
+      "loadFailed": "本地歌单收藏加载失败，请重试"
     }
   },
   "artist": {

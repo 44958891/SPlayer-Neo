@@ -1,4 +1,5 @@
 import type { Track, TrackSource } from "@shared/types/player";
+import type { Platform } from "@shared/types/platform";
 
 /** 封面摘要卡片 */
 export interface CoverItem {
@@ -12,6 +13,8 @@ export interface CoverItem {
   subtitle?: string;
   /** 歌曲数量 */
   trackCount: number;
+  /** 在线来源，用于跨平台卡片导航与唯一标识 */
+  source?: Platform;
 }
 
 /** 歌手详情 */

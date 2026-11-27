@@ -1,9 +1,10 @@
 /**
  * 咪咕音乐：字段形状与归一化工具（主进程与渲染进程共用）
  *
- * 只有 app.c.nf.migu.cn 的 MIGUM2.0 `search_all.do` 仍然可用（网页版 v3/v5 接口已
- * 全部改为前端路由，直接请求会 301 到 /v5/）。因此咪咕接入只做搜索：歌曲、专辑、
- * 歌手三类都有结果；歌单接口已下线，不提供。
+ * 搜索走 app.c.nf.migu.cn 的 MIGUM2.0 `search_all.do`：歌曲、专辑、歌手三类有结果；
+ * 歌单搜索类目已下线（searchSwitch.playlist 返回空）。歌单链路走官方 v5 网页前端
+ * 实际使用的接口：歌单广场运营位（动态真实歌单池，见 playlistDiscover）+ 详情
+ * `resource/playlist/v2.0` + 曲目 `MIGUM3.0/resource/playlist/song/v2.0` 分页。
  *
  * 搜索响应里没有时长字段，用 HQ 档的文件体积按 320kbps 反推秒数（实测与官方时长
  * 吻合，误差 1s 内），作为曲目时长兜底。
@@ -217,3 +218,77 @@ export const mgAlbumSongToSong = (song: MgAlbumSong): MgSong => ({
 /** 专辑歌曲时长：优先官方 duration（秒），缺失时按体积反推 */
 export const mgAlbumSongDuration = (song: MgAlbumSong): number =>
   song.duration && song.duration > 0 ? song.duration * 1000 : mgDuration(mgAlbumSongToSong(song));
+
+/** 歌单广场运营位条目（page-data 接口返回，字段为官方原样） */
+export interface MgPlaylistSquareItem {
+  resId?: string;
+  resType?: string;
+  /** 标题 */
+  txt?: string;
+  /** 播放量描述 */
+  txt2?: string;
+  /** 封面 */
+  img?: string;
+  view?: string;
+  logEvent?: {
+    contentId?: string;
+    contentName?: string;
+    resourceType?: string;
+    boxName?: string;
+  };
+}
+
+/** 歌单广场区块节点（递归嵌套，标题与条目分层） */
+export interface MgSquareGroup {
+  view?: string;
+  txt?: string;
+  contents?: MgSquareGroup[];
+}
+
+/** 歌单广场页数据响应 */
+export interface MgSquarePageResponse {
+  code: string;
+  info?: string;
+  data?: { contents?: MgSquareGroup[] };
+}
+
+/** 归一化后的歌单卡片 */
+export interface MgPlaylistCard {
+  /** 歌单 ID（可直接走详情链路） */
+  id: string;
+  title: string;
+  cover: string;
+  /** 副标题（播放量描述） */
+  subtitle: string;
+  /** 所属区块（场景歌单/编辑推荐等） */
+  section: string;
+}
+
+/** 歌单详情（resource/playlist/v2.0 返回，字段为官方原样） */
+export interface MgPlaylistDetail {
+  resourceType?: string;
+  title?: string;
+  musicListId?: string;
+  publishTime?: string;
+  summary?: string;
+  imgItem?: { img?: string; imgOri?: string; webpImg?: string };
+  originalImgUrl?: string;
+  ownerId?: string;
+  ownerName?: string;
+  musicNum?: number;
+  opNumItem?: { playNum?: number; playNumDesc?: string };
+}
+
+/** 歌单详情响应 */
+export interface MgPlaylistDetailResponse {
+  code: string;
+  info?: string;
+  data?: MgPlaylistDetail;
+}
+
+/** 歌单曲目响应（曲目形状与专辑接口一致，复用 MgAlbumSong） */
+export interface MgPlaylistSongsResponse {
+  code: string;
+  info?: string;
+  data?: { songList?: MgAlbumSong[]; totalCount?: number };
+}

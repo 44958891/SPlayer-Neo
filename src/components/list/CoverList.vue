@@ -28,6 +28,8 @@ export interface CoverListProps {
   hasMore?: boolean;
   /** 触底加载中 */
   loadingMore?: boolean;
+  /** 显示卡片平台来源 */
+  showSource?: boolean;
 }
 
 const props = withDefaults(defineProps<CoverListProps>(), {
@@ -41,6 +43,7 @@ const props = withDefaults(defineProps<CoverListProps>(), {
   paddingBottom: 0,
   hasMore: false,
   loadingMore: false,
+  showSource: false,
 });
 
 const { t } = useI18n();
@@ -94,6 +97,14 @@ interface Row {
   items: CoverItem[];
 }
 
+/**
+ * 按来源区分不同平台的同名 ID
+ * @param item - 封面卡片
+ * @returns 跨平台唯一键
+ */
+const getItemKey = (item: CoverItem): string =>
+  item.source ? item.source + ":" + item.id : item.id;
+
 /** 把 items 按列数切成行 */
 const rows = computed<Row[]>(() => {
   const cols = columnCount.value;
@@ -101,7 +112,7 @@ const rows = computed<Row[]>(() => {
   const out: Row[] = [];
   for (let i = 0; i < props.items.length; i += cols) {
     const slice = props.items.slice(i, i + cols);
-    out.push({ id: slice[0]?.id ?? `__pad_${i}`, items: slice });
+    out.push({ id: slice[0] ? getItemKey(slice[0]) : `__pad_${i}`, items: slice });
   }
   return out;
 });
@@ -150,11 +161,12 @@ const getRowKey = (row: Row): string => row.id;
       >
         <CoverCard
           v-for="item in row.items"
-          :key="item.id"
+          :key="getItemKey(item)"
           :item="item"
           :type="type"
           :rounded="rounded"
           :fallback="fallback"
+          :show-source="showSource"
           @click="emit('click', item)"
         />
       </div>
@@ -172,11 +184,12 @@ const getRowKey = (row: Row): string => row.id;
   >
     <CoverCard
       v-for="item in items"
-      :key="item.id"
+      :key="getItemKey(item)"
       :item="item"
       :type="type"
       :rounded="rounded"
       :fallback="fallback"
+      :show-source="showSource"
       @click="emit('click', item)"
     />
   </div>

@@ -8,6 +8,10 @@ import { SIDEBAR_NAV_META, applySavedOrder } from "@/components/layout/sidebarNa
 import { useSettingsStore } from "@/stores/settings";
 import { useStatusStore } from "@/stores/status";
 import { usePlaylistStore } from "@/stores/playlist";
+import { usePlaylistFavoritesStore } from "@/stores/playlistFavorites";
+import { PLATFORM_SHORT_NAME, PLATFORM_NAME } from "@shared/types/platform";
+import type { PlaylistFavorite } from "@shared/types/playlist";
+import { toast } from "@/composables/useToast";
 import { useUserStore } from "@/stores/user";
 import { useDownloadStore } from "@/stores/download";
 import { useHeartMode } from "@/composables/useHeartMode";
@@ -15,6 +19,7 @@ import { useResponsiveLayout } from "@/composables/useResponsiveLayout";
 import { useSettingsDialog } from "@/settings/useSettingsDialog";
 import * as player from "@/core/player";
 import IconLucideListMusic from "~icons/lucide/list-music";
+import IconLucideStarOff from "~icons/lucide/star-off";
 import IconLucidePlus from "~icons/lucide/plus";
 import IconLucideImport from "~icons/lucide/import";
 import PlaylistImportDialog from "@/components/modals/PlaylistImportDialog.vue";
@@ -31,6 +36,7 @@ const route = useRoute();
 const { appearance, system: systemSettings } = useSettingsStore();
 const status = useStatusStore();
 const playlistStore = usePlaylistStore();
+const playlistFavorites = usePlaylistFavoritesStore();
 const userStore = useUserStore();
 const downloadStore = useDownloadStore();
 const { enterHeartMode } = useHeartMode();
@@ -132,19 +138,45 @@ const renderSubscribedHeader = () =>
 
 const hiddenKeys = computed(() => new Set(appearance.sidebarHiddenKeys));
 
+/**
+ * 生成在线收藏的原平台路由，与详情页导航保持一致
+ * @param favorite - 本地保存的在线歌单入口
+ * @returns 歌单详情路由
+ */
+const favoriteRoute = (favorite: PlaylistFavorite): string =>
+  "/collection/" + favorite.source + "/playlist/" + encodeURIComponent(favorite.originId);
+
 /** 我的歌单 */
 const myPlaylistItems = computed<SMenuItem[]>(() => {
   const showCover = appearance.sidebarPlaylistCover;
   const hidden = hiddenKeys.value;
   const local = status.myPlaylistSource === "local";
   const items: SMenuItem[] = local
-    ? playlistStore.playlists.map((pl) => ({
-        key: `/collection/local/playlist/${pl.id}`,
-        label: pl.title,
-        icon: markRaw(IconLucideListMusic),
-        cover: pl.cover ?? "",
-        showCover,
-      }))
+    ? [
+        ...playlistFavorites.favorites.map((favorite) => ({
+          key: favoriteRoute(favorite),
+          label: favorite.title,
+          icon: markRaw(IconLucideListMusic),
+          cover: favorite.cover ?? "",
+          showCover,
+          trailing: () =>
+            h(
+              "span",
+              {
+                class: "text-[10px] font-medium text-on-surface-variant/55",
+                title: PLATFORM_NAME[favorite.source],
+              },
+              PLATFORM_SHORT_NAME[favorite.source],
+            ),
+        })),
+        ...playlistStore.playlists.map((pl) => ({
+          key: "/collection/local/playlist/" + pl.id,
+          label: pl.title,
+          icon: markRaw(IconLucideListMusic),
+          cover: pl.cover ?? "",
+          showCover,
+        })),
+      ]
     : userStore.createdPlaylists.slice(1).map((pl) => ({
         key: `/collection/netease/playlist/${pl.id}`,
         label: pl.name,
@@ -155,7 +187,10 @@ const myPlaylistItems = computed<SMenuItem[]>(() => {
   const order = local
     ? appearance.sidebarPlaylistOrder.myLocal
     : appearance.sidebarPlaylistOrder.myOnline;
-  return applySavedOrder(items, order).filter((item) => !hidden.has(item.key));
+  return applySavedOrder(
+    [...new Map(items.map((item) => [item.key, item])).values()],
+    order,
+  ).filter((item) => !hidden.has(item.key));
 });
 
 /** 收藏的歌单 */
@@ -272,12 +307,22 @@ const onMenuContextMenu = (event: MouseEvent): void => {
   contextTargetKey.value = el?.getAttribute("data-menu-key") ?? "";
 };
 
+const removingFavorite = ref(false);
+
 const contextMenuItems = computed<DropdownMenuItem[]>(() => {
   const target = contextTargetKey.value;
   const entry = SIDEBAR_NAV_META[target];
   // 歌单项（/collection/ 前缀）与可隐藏导航项均支持右键隐藏
   const hideable = entry ? entry.hideable : target.startsWith("/collection/");
+  const favorite = playlistFavorites.favorites.find((item) => favoriteRoute(item) === target);
   return [
+    {
+      key: "removeLocalFavorite",
+      label: t("collection.localFavorite.removeHint"),
+      icon: markRaw(IconLucideStarOff),
+      show: status.myPlaylistSource === "local" && Boolean(favorite),
+      disabled: removingFavorite.value,
+    },
     {
       key: "hide",
       label: t("nav.menu.hideFromSidebar"),
@@ -292,7 +337,24 @@ const contextMenuItems = computed<DropdownMenuItem[]>(() => {
   ];
 });
 
-const onContextMenuSelect = (key: string): void => {
+const onContextMenuSelect = async (key: string): Promise<void> => {
+  if (key === "removeLocalFavorite") {
+    if (removingFavorite.value) return;
+    const favorite = playlistFavorites.favorites.find(
+      (item) => favoriteRoute(item) === contextTargetKey.value,
+    );
+    if (!favorite) return;
+    removingFavorite.value = true;
+    try {
+      await playlistFavorites.remove(favorite.source, favorite.originId);
+      toast.success(t("collection.localFavorite.removed"));
+    } catch {
+      toast.error(t("collection.localFavorite.failed"));
+    } finally {
+      removingFavorite.value = false;
+    }
+    return;
+  }
   if (key === "hide") {
     const target = contextTargetKey.value;
     if (target && !appearance.sidebarHiddenKeys.includes(target)) {
@@ -331,16 +393,19 @@ const onSelect = (key: string) => {
  * 防止隐藏/顺序存档随时间无限累积残留
  * @param existing - 当前存在的歌单路由键集合
  */
-const prunePlaylistArchive = (existing: ReadonlySet<string>): void => {
+const prunePlaylistArchive = (existing: ReadonlySet<string>, onlineReady: boolean): void => {
   const isStale = (key: string): boolean => key.startsWith("/collection/") && !existing.has(key);
-  const hiddenKeysNext = appearance.sidebarHiddenKeys.filter((key) => !isStale(key));
+  // 未取得云端列表时保留网易云隐藏项，避免本地收藏加载先完成而误清理
+  const isHiddenStale = (key: string): boolean =>
+    isStale(key) && (onlineReady || !key.startsWith("/collection/netease/"));
+  const hiddenKeysNext = appearance.sidebarHiddenKeys.filter((key) => !isHiddenStale(key));
   if (hiddenKeysNext.length !== appearance.sidebarHiddenKeys.length)
     appearance.sidebarHiddenKeys = hiddenKeysNext;
   const order = appearance.sidebarPlaylistOrder;
   const prune = (list: string[]): string[] => list.filter((key) => !isStale(key));
   const myLocal = prune(order.myLocal);
-  const myOnline = prune(order.myOnline);
-  const subscribed = prune(order.subscribed);
+  const myOnline = onlineReady ? prune(order.myOnline) : order.myOnline;
+  const subscribed = onlineReady ? prune(order.subscribed) : order.subscribed;
   if (
     myLocal.length !== order.myLocal.length ||
     myOnline.length !== order.myOnline.length ||
@@ -353,21 +418,34 @@ const prunePlaylistArchive = (existing: ReadonlySet<string>): void => {
 // 本地歌单加载完成后即可收敛
 // 在线部分仅在已登录且列表非空时清理
 watch(
-  () => [playlistStore.playlists, userStore.isLoggedIn ? userStore.playlists : null] as const,
-  ([localLists, onlineLists]) => {
+  () =>
+    [
+      playlistStore.playlists,
+      playlistStore.initialized,
+      playlistFavorites.favorites,
+      playlistFavorites.initialized,
+      userStore.isLoggedIn ? userStore.playlists : null,
+    ] as const,
+  ([localLists, localLoaded, favorites, favoritesLoaded, onlineLists]) => {
+    if (!favoritesLoaded || !localLoaded) return;
     const existing = new Set<string>();
     for (const pl of localLists) existing.add(`/collection/local/playlist/${pl.id}`);
+    for (const favorite of favorites) existing.add(favoriteRoute(favorite));
     if (onlineLists && onlineLists.length > 0) {
       for (const pl of onlineLists) existing.add(`/collection/netease/playlist/${pl.id}`);
     }
-    if (existing.size === 0) return;
-    prunePlaylistArchive(existing);
+    prunePlaylistArchive(existing, Boolean(onlineLists && onlineLists.length > 0));
   },
   { deep: false },
 );
 
 onMounted(() => {
   if (!playlistStore.initialized) playlistStore.load();
+  if (!playlistFavorites.initialized) {
+    void playlistFavorites
+      .load()
+      .catch(() => toast.error(t("collection.localFavorite.loadFailed")));
+  }
   void downloadStore.init();
   // 移动适配：窄屏自动收起侧栏（图标条形态），宽屏展开
   const applyNarrowSidebar = (): void => {

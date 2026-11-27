@@ -2,6 +2,7 @@ import { ipcMain } from "electron";
 import type {
   LegacyPlaylistRecord,
   PlaylistCreateInput,
+  PlaylistFavoriteInput,
   PlaylistUpdateInput,
 } from "@shared/types/playlist";
 import {
@@ -16,6 +17,11 @@ import {
   removePlaylistTracks,
   updatePlaylist,
 } from "@main/database/playlists";
+import {
+  addPlaylistFavorite,
+  listPlaylistFavorites,
+  removePlaylistFavorite,
+} from "@main/database/playlistFavorites";
 /** 注册统一歌单 IPC */
 export const registerPlaylistIpc = (): void => {
   ipcMain.handle("playlist:list", getPlaylists);
@@ -38,4 +44,11 @@ export const registerPlaylistIpc = (): void => {
     importLegacyPlaylists(records),
   );
   ipcMain.handle("playlist:clear", clearPlaylists);
+  ipcMain.handle("playlist:listFavorites", () => listPlaylistFavorites());
+  ipcMain.handle("playlist:addFavorite", (_event, input: PlaylistFavoriteInput) =>
+    addPlaylistFavorite(input),
+  );
+  ipcMain.handle("playlist:removeFavorite", (_event, source: string, originId: string) =>
+    removePlaylistFavorite(source, originId),
+  );
 };

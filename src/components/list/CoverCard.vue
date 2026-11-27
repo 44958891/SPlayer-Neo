@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CoverItem } from "@/types/artist";
+import { PLATFORM_NAME, PLATFORM_SHORT_NAME } from "@shared/types/platform";
 import artistFallback from "@/assets/images/artist.jpg";
 
 export interface CoverCardProps {
@@ -11,11 +12,14 @@ export interface CoverCardProps {
   rounded?: string;
   /** 封面占位图 */
   fallback?: string;
+  /** 在封面角落显示真实平台来源 */
+  showSource?: boolean;
 }
 
 const props = withDefaults(defineProps<CoverCardProps>(), {
   type: "default",
   rounded: "rounded-xl",
+  showSource: false,
 });
 
 defineEmits<{ click: [] }>();
@@ -38,6 +42,14 @@ const actualFallback = computed(() => (props.type === "artist" ? artistFallback 
         :alt="item.title"
         class="w-full aspect-square transition-[transform,filter] duration-300 ease-out group-hover:scale-108 group-hover:brightness-80"
       />
+      <span
+        v-if="showSource && item.source"
+        class="pointer-events-none absolute left-2 top-2 z-2 rounded-md bg-black/55 px-1.5 py-0.5 text-[10px] font-medium leading-4 text-white"
+        :title="PLATFORM_NAME[item.source]"
+        :aria-label="PLATFORM_NAME[item.source]"
+      >
+        {{ PLATFORM_SHORT_NAME[item.source] }}
+      </span>
       <!-- 播放按钮 -->
       <div
         class="absolute size-9 flex items-center justify-center rounded-full opacity-0 transition-[opacity,transform] duration-300 group-hover:opacity-100"

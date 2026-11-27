@@ -6,6 +6,7 @@ import { loadCollection as loadCollectionService } from "@/services/collection";
 import { getCollectionShareUrl } from "@/utils/format/shareUrl";
 import { useCopyText } from "@/composables/useCopyText";
 import { useCollectionSubscribe } from "@/composables/collection/useCollectionSubscribe";
+import { usePlaylistFavorite } from "@/composables/collection/usePlaylistFavorite";
 import { usePlaylistManage } from "@/composables/collection/usePlaylistManage";
 import SongList from "@/components/list/SongList.vue";
 import { formatTime } from "@/utils/time";
@@ -19,6 +20,7 @@ import IconLucideCalendar from "~icons/lucide/calendar";
 import IconLucideUser from "~icons/lucide/user";
 import IconMoreHorizontal from "~icons/lucide/more-horizontal";
 import IconCopy from "~icons/lucide/copy";
+import IconMaterialSymbolsFavoriteOutlineRounded from "~icons/material-symbols/favorite-outline-rounded";
 import { sortTracks } from "@/utils/trackSort";
 import { useStatusStore } from "@/stores/status";
 
@@ -161,6 +163,18 @@ const songListRef = shallowRef<InstanceType<typeof SongList> | null>(null);
 /** 收藏 / 取消收藏 */
 const subscribe = useCollectionSubscribe(collection);
 
+/** 收藏到本地歌单（在线平台歌单） */
+const favorite = usePlaylistFavorite(collection);
+
+/** 本地收藏按钮的提示文案 */
+const favoriteHint = computed(() =>
+  t(
+    favorite.isFavorite.value
+      ? "collection.localFavorite.removeHint"
+      : "collection.localFavorite.addHint",
+  ),
+);
+
 /** 歌单管理：编辑 + 删除 */
 const manage = usePlaylistManage(collection, {
   onEdited: () => loadCollection(),
@@ -178,6 +192,17 @@ const moreMenuItems = computed<DropdownMenuItem[]>(() => {
   const isLocal = source === "local";
   const list: DropdownMenuItem[] = [
     { key: "batchManage", label: t("songList.batch.manage"), icon: IconLucideListChecks },
+    {
+      key: "cloudFavorite",
+      label: t(
+        subscribe.isSubscribed.value
+          ? "collection.localFavorite.cloudRemove"
+          : "collection.localFavorite.cloudAdd",
+      ),
+      icon: markRaw(IconMaterialSymbolsFavoriteOutlineRounded),
+      show: type === "playlist" && subscribe.available.value,
+      disabled: subscribe.busy.value,
+    },
     { key: "edit", label: editLabel.value, icon: IconLucidePencil, show: manage.canManage.value },
     {
       key: "delete",
@@ -218,6 +243,9 @@ const handleMoreMenu = (key: string) => {
   switch (key) {
     case "batchManage":
       songListRef.value?.enterBatch();
+      break;
+    case "cloudFavorite":
+      void subscribe.toggle();
       break;
     case "edit":
       manage.openEdit();
@@ -360,8 +388,32 @@ onBeforeUnmount(() => {
                 </template>
                 {{ t("common.playAll") }}
               </SButton>
+              <!-- 收藏到本地歌单 -->
               <SButton
-                v-if="subscribe.available.value"
+                v-if="favorite.available.value"
+                :type="favorite.isFavorite.value ? 'primary' : 'default'"
+                variant="secondary"
+                round
+                :loading="favorite.busy.value"
+                :title="favoriteHint"
+                :aria-label="favoriteHint"
+                :aria-pressed="favorite.isFavorite.value"
+                @click="favorite.toggle"
+              >
+                <template #icon>
+                  <IconLucideStar v-if="favorite.isFavorite.value" fill="currentColor" />
+                  <IconLucideStar v-else />
+                </template>
+                {{
+                  t(
+                    favorite.isFavorite.value
+                      ? "collection.localFavorite.done"
+                      : "collection.localFavorite.add",
+                  )
+                }}
+              </SButton>
+              <SButton
+                v-if="subscribe.available.value && type !== 'playlist'"
                 variant="secondary"
                 round
                 :disabled="subscribe.busy.value"

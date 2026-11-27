@@ -232,6 +232,17 @@ export const initDatabase = (): void => {
     CREATE INDEX IF NOT EXISTS idx_remote_playlists_generation
       ON remote_playlists(server_id, generation);
 
+    CREATE TABLE IF NOT EXISTS playlist_favorites (
+      source TEXT NOT NULL,
+      origin_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      cover TEXT,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (source, origin_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_playlist_favorites_created
+      ON playlist_favorites(created_at DESC, source, origin_id);
+
   `);
   migrate(db);
   libraryLog.info(`数据库已初始化: ${dbPath}`);

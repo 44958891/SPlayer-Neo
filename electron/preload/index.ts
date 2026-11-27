@@ -28,8 +28,11 @@ import type { DesktopLyricUnlockButtonBounds } from "@shared/types/window";
 import type {
   LegacyPlaylistRecord,
   PlaylistCreateInput,
+  PlaylistFavorite,
+  PlaylistFavoriteInput,
   PlaylistUpdateInput,
 } from "@shared/types/playlist";
+import type { Platform } from "@shared/types/platform";
 import type { CjkTransformMode } from "@shared/types/opencc";
 import type { DownloadTrackIdentity } from "@shared/types/download";
 import type { QualityProvenance, ResolvedAudioFile } from "@shared/types/quality";
@@ -307,6 +310,21 @@ const api = {
     importLegacy: (records: LegacyPlaylistRecord[]) =>
       ipcRenderer.invoke("playlist:importLegacy", records),
     clear: () => ipcRenderer.invoke("playlist:clear"),
+    listFavorites: (): Promise<PlaylistFavorite[]> => ipcRenderer.invoke("playlist:listFavorites"),
+    /**
+     * 收藏在线歌单，同源同 ID 重复收藏会刷新元数据并保留原收藏时间
+     * @param input - 收藏信息
+     * @returns 收藏后的记录
+     */
+    addFavorite: (input: PlaylistFavoriteInput): Promise<PlaylistFavorite> =>
+      ipcRenderer.invoke("playlist:addFavorite", input),
+    /**
+     * 取消收藏在线歌单，仅按 source + originId 复合键删除
+     * @param source - 原平台
+     * @param originId - 原平台歌单 ID
+     */
+    removeFavorite: (source: Platform, originId: string): Promise<void> =>
+      ipcRenderer.invoke("playlist:removeFavorite", source, originId),
   },
   window: {
     // 切换桌面歌词窗口

@@ -2,14 +2,17 @@
 defineOptions({ name: "Home" });
 
 import type { Track } from "@shared/types/player";
+import { onBeforeRouteLeave } from "vue-router";
 import type { CoverItem } from "@/types/artist";
+import { PLATFORM_NAME } from "@shared/types/platform";
+import { toast } from "@/composables/useToast";
 import { useHomeHeader } from "@/composables/home/useHomeHeader";
 import { useDailyRecommend } from "@/composables/home/useDailyRecommend";
 import { useContinueListening } from "@/composables/home/useContinueListening";
 import { useQuickActions } from "@/composables/home/useQuickActions";
 import { useHomeDiscover } from "@/composables/home/useHomeDiscover";
 import { useFloatingPlayerBar } from "@/composables/useFloatingPlayerBar";
-import { navigateToPlaylist, navigateToArtist, navigateToAlbum } from "@/utils/navigate";
+import { navigateToPlaylist, navigateToArtist } from "@/utils/navigate";
 import * as player from "@/core/player";
 
 const { t } = useI18n();
@@ -36,14 +39,18 @@ const {
   load: loadContinue,
 } = useContinueListening();
 
-/** 推荐内容：推荐歌单 / 雷达 / 歌手 / 新碟 */
+/** 推荐内容：发现歌单 / 雷达 / 歌手 */
 const {
   recommendPlaylists,
   recommendTitle,
   recommendSubtitle,
+  playlistsLoading,
+  playlistsError,
+  unavailablePlatforms,
+  ensurePlaylists,
+  refreshPlaylists,
   radarPlaylists,
   artists,
-  newAlbums,
   load: loadDiscover,
 } = useHomeDiscover();
 
@@ -54,30 +61,81 @@ onMounted(() => {
   void loadDiscover();
 });
 
+/** 首页使用独立滚动容器，位置随 KeepAlive 实例保存 */
+const homeScrollRef = shallowRef<HTMLElement | null>(null);
+let savedScrollTop = 0;
+let homeActive = true;
+
+/** 仅在首页可见时记录位置，避免离场时的容器归零覆盖记录 */
+const rememberHomeScroll = (): void => {
+  if (homeActive && homeScrollRef.value) savedScrollTop = homeScrollRef.value.scrollTop;
+};
+
+onBeforeRouteLeave(() => {
+  rememberHomeScroll();
+  homeActive = false;
+});
+onDeactivated(() => {
+  homeActive = false;
+});
+onActivated(async () => {
+  homeActive = true;
+  void ensurePlaylists();
+  await nextTick();
+  if (homeActive && homeScrollRef.value) homeScrollRef.value.scrollTop = savedScrollTop;
+});
+
+/**
+ * 手动更换发现歌单，仅刷新当前区块
+ * @returns 刷新完成后保留现有位置和其他推荐内容
+ */
+const shufflePlaylists = async (): Promise<void> => {
+  if (playlistsLoading.value) return;
+  const refreshed = await refreshPlaylists();
+  if (!refreshed) {
+    toast.warning(t(playlistsError.value ?? "home.discovery.refreshFailed"));
+  }
+};
+
+/** 可用平台不足时说明来源与当前数量 */
+const discoveryNotice = computed(() => {
+  if (playlistsError.value) return t(playlistsError.value);
+  const notices: string[] = [];
+  if (unavailablePlatforms.value.length > 0) {
+    notices.push(
+      t("home.discovery.partial", {
+        platforms: unavailablePlatforms.value.map((source) => PLATFORM_NAME[source]).join(" / "),
+      }),
+    );
+  }
+  if (recommendPlaylists.value.length > 0 && recommendPlaylists.value.length < 25) {
+    notices.push(t("home.discovery.shortfall", { count: recommendPlaylists.value.length }));
+  }
+  return notices.join(" · ");
+});
+
 /** 拼接歌手名 */
 const artistName = (track: Track): string => track.artists.map((artist) => artist.name).join(" / ");
 
 /** 序号补零为两位 */
 const trackNo = (index: number): string => String(index + 1).padStart(2, "0");
 
-/** 打开歌单详情 */
+/**
+ * 按卡片真实来源打开歌单，历史网易卡片沿用默认来源
+ * @param item - 被点击的歌单摘要
+ */
 const openPlaylist = (item: CoverItem): void => {
-  navigateToPlaylist(item.id, { source: "netease", name: item.title });
+  navigateToPlaylist(item.id, { source: item.source ?? "netease", name: item.title });
 };
 
 /** 打开歌手页 */
 const openArtist = (item: CoverItem): void => {
   navigateToArtist(item.title, { source: "netease", artistId: item.id });
 };
-
-/** 打开专辑页 */
-const openAlbum = (item: CoverItem): void => {
-  navigateToAlbum(item.title, { source: "netease", albumId: item.id });
-};
 </script>
 
 <template>
-  <div class="h-full overflow-y-auto">
+  <div ref="homeScrollRef" class="h-full overflow-y-auto" @scroll.passive="rememberHomeScroll">
     <div
       class="mx-auto flex max-w-[1400px] flex-col gap-6 px-6 pt-6"
       :class="isFloatingBar ? 'pb-28' : 'pb-10'"
@@ -229,13 +287,62 @@ const openAlbum = (item: CoverItem): void => {
           <span class="text-sm">{{ t("home.continue.empty") }}</span>
         </div>
       </section>
-      <!-- 推荐歌单 / 专属歌单 -->
-      <section v-if="recommendPlaylists.length > 0" class="flex flex-col gap-3">
-        <div>
-          <h3 class="text-lg font-semibold text-on-surface">{{ recommendTitle }}</h3>
-          <p class="mt-0.5 text-xs text-on-surface-variant/50">{{ recommendSubtitle }}</p>
+      <!-- 五平台发现歌单 -->
+      <section class="flex flex-col gap-3" :aria-busy="playlistsLoading">
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <h3 class="text-lg font-semibold text-on-surface">{{ recommendTitle }}</h3>
+            <p class="mt-0.5 text-xs text-on-surface-variant/50">{{ recommendSubtitle }}</p>
+          </div>
+          <SButton
+            variant="tertiary"
+            size="small"
+            round
+            class="shrink-0"
+            :disabled="playlistsLoading"
+            :aria-label="t('home.discovery.refreshHint')"
+            :title="t('home.discovery.refreshHint')"
+            @click="shufflePlaylists"
+          >
+            <template #icon>
+              <IconLucideRefreshCw :class="{ 'animate-spin': playlistsLoading }" />
+            </template>
+            {{ t(playlistsLoading ? "home.discovery.refreshing" : "home.discovery.refresh") }}
+          </SButton>
         </div>
-        <CoverList :items="recommendPlaylists" :virtual="false" :gap="16" @click="openPlaylist" />
+        <p
+          v-if="discoveryNotice && recommendPlaylists.length > 0"
+          role="status"
+          class="text-xs text-on-surface-variant/65"
+        >
+          {{ discoveryNotice }}
+        </p>
+        <CoverList
+          v-if="recommendPlaylists.length > 0"
+          :items="recommendPlaylists"
+          :virtual="false"
+          :gap="16"
+          show-source
+          @click="openPlaylist"
+        />
+        <div
+          v-else
+          class="flex min-h-36 items-center justify-center gap-2 rounded-xl border border-dashed border-on-surface/12 text-sm text-on-surface-variant/60"
+          role="status"
+        >
+          <SLoading v-if="playlistsLoading" class="size-4 text-primary/70" />
+          <span>
+            {{
+              t(
+                playlistsLoading
+                  ? "common.loading"
+                  : playlistsError
+                    ? "home.discovery.loadFailed"
+                    : "home.discovery.empty",
+              )
+            }}
+          </span>
+        </div>
       </section>
       <!-- 雷达歌单 -->
       <section v-if="radarPlaylists.length > 0" class="flex flex-col gap-3">
@@ -259,14 +366,6 @@ const openAlbum = (item: CoverItem): void => {
           :gap="16"
           @click="openArtist"
         />
-      </section>
-      <!-- 新碟上架 -->
-      <section v-if="newAlbums.length > 0" class="flex flex-col gap-3">
-        <div>
-          <h3 class="text-lg font-semibold text-on-surface">{{ t("home.albums.title") }}</h3>
-          <p class="mt-0.5 text-xs text-on-surface-variant/50">{{ t("home.albums.subtitle") }}</p>
-        </div>
-        <CoverList :items="newAlbums" :virtual="false" :gap="16" @click="openAlbum" />
       </section>
     </div>
   </div>

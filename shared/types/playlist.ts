@@ -1,3 +1,4 @@
+import type { Platform } from "./platform";
 import type { Track } from "./player";
 
 /** 歌单来源类型 */
@@ -45,6 +46,24 @@ export interface LegacyPlaylistRecord {
   updateTime?: number;
 }
 
+/** 在线歌单收藏输入（仅存引用元数据，不落 Track） */
+export interface PlaylistFavoriteInput {
+  /** 原平台 */
+  source: Platform;
+  /** 原平台歌单 ID */
+  originId: string;
+  /** 歌单标题 */
+  title: string;
+  /** 歌单封面 URL，仅接受 http(s) */
+  cover?: string;
+}
+
+/** 已收藏的在线歌单（复合键 source + originId） */
+export interface PlaylistFavorite extends PlaylistFavoriteInput {
+  /** 首次收藏时间（毫秒） */
+  createTime: number;
+}
+
 /** renderer 可用的歌单 API */
 export interface PlaylistApi {
   list: () => Promise<PlaylistSummary[]>;
@@ -58,4 +77,18 @@ export interface PlaylistApi {
   removeTracks: (id: string, trackIds: string[]) => Promise<number>;
   importLegacy: (records: LegacyPlaylistRecord[]) => Promise<void>;
   clear: () => Promise<void>;
+  /** 获取全部在线歌单收藏，按收藏时间倒序 */
+  listFavorites: () => Promise<PlaylistFavorite[]>;
+  /**
+   * 收藏在线歌单，同源同 ID 重复收藏会刷新元数据并保留原收藏时间
+   * @param input - 收藏信息
+   * @returns 收藏后的记录
+   */
+  addFavorite: (input: PlaylistFavoriteInput) => Promise<PlaylistFavorite>;
+  /**
+   * 取消收藏在线歌单，仅按 source + originId 复合键删除
+   * @param source - 原平台
+   * @param originId - 原平台歌单 ID
+   */
+  removeFavorite: (source: Platform, originId: string) => Promise<void>;
 }

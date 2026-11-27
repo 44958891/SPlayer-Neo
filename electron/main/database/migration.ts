@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 
 /** 当前 schema 版本 */
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 type TableInfoRow = { name: string };
 
@@ -89,6 +89,23 @@ export const migrate = (d: Database.Database): void => {
       d.exec("ALTER TABLE download_tasks ADD COLUMN min_level TEXT");
     }
     v = 8;
+  }
+
+  // v8 → v9: 新增在线歌单收藏表，收藏以复合键 source + origin_id 引用原平台歌单，不落 Track
+  if (v < 9) {
+    d.exec(`
+      CREATE TABLE IF NOT EXISTS playlist_favorites (
+        source TEXT NOT NULL,
+        origin_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        cover TEXT,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (source, origin_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_playlist_favorites_created
+        ON playlist_favorites(created_at DESC, source, origin_id);
+    `);
+    v = 9;
   }
 
   // 版本无关部分
